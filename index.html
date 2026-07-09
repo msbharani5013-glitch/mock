@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSC Mock Analysis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --navy:#0F1B3C; --navy2:#14224A; --ink:#141B2D; --paper:#F4F6FA; --panel:#FFFFFF;
+  --line:#DCE1EC; --muted:#6B7385; --accent:#2A5CAA; --accent-bg:#E7EEFA;
+  --green:#1E7A46; --green-bg:#E3F3E9; --red:#B23A2E; --red-bg:#FBE6E3;
+  --yellow:#B8860B; --yellow-bg:#FBF1DC; --radius:14px;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;}
+.topbar{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.topbar .brand{font-weight:700;font-size:1.05rem;letter-spacing:.02em;}
+.topbar .menu{font-size:1.3rem;opacity:.8;cursor:pointer;}
+.app{max-width:760px;margin:0 auto;padding:20px 16px 90px;}
+h1{font-size:1.35rem;margin:4px 0 4px;} h2{font-size:1.05rem;margin:0 0 10px;}
+p.lead{color:var(--muted);font-size:.9rem;margin:0 0 18px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(20,30,60,.04);}
+.tile{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;cursor:pointer;width:100%;text-align:left;margin-bottom:12px;transition:transform .1s;}
+.tile:hover{transform:translateY(-1px);border-color:var(--accent);}
+.tile .icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;}
+.tile.blue .icon{background:var(--accent-bg);}
+.tile.green .icon{background:var(--green-bg);}
+.tile h3{margin:0 0 2px;font-size:1rem;}
+.tile p{margin:0;color:var(--muted);font-size:.82rem;}
+label{display:block;font-size:.76rem;font-weight:600;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em;}
+input,select,textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:.95rem;background:#fff;color:var(--ink);font-family:inherit;}
+textarea{resize:vertical;min-height:80px;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg);}
+.field{margin-bottom:14px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+@media(max-width:560px){.grid3{grid-template-columns:1fr 1fr;}}
+button{font-family:inherit;font-weight:600;font-size:.92rem;cursor:pointer;border-radius:9px;border:1.5px solid var(--navy);padding:12px 18px;background:var(--navy);color:#fff;}
+button.secondary{background:#fff;color:var(--navy);}
+button.ghost{background:transparent;border-color:var(--line);color:var(--accent);}
+button:disabled{opacity:.4;cursor:not-allowed;}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+.btnrow.spread{justify-content:space-between;}
+.chip-toggle{display:flex;gap:8px;flex-wrap:wrap;}
+.chip{padding:8px 14px;border-radius:20px;border:1.5px solid var(--line);font-size:.85rem;cursor:pointer;background:#fff;user-select:none;}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.stepper{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:9px;padding:6px 8px;}
+.stepper button{width:30px;height:30px;padding:0;border-radius:7px;font-size:1.1rem;line-height:1;}
+.stepper .val{flex:1;text-align:center;font-weight:700;font-size:1rem;}
+.subjectcard{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+.subjectcard.disabled{opacity:.45;}
+.subjectcard .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.totalbar{padding:12px 14px;border-radius:10px;font-weight:600;font-size:.88rem;margin-top:6px;}
+.totalbar.ok{background:var(--green-bg);color:var(--green);}
+.totalbar.bad{background:var(--red-bg);color:var(--red);}
+.qtabs{display:flex;gap:6px;overflow-x:auto;padding:4px 2px 10px;margin-bottom:10px;}
+.qtab{flex-shrink:0;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:600;cursor:pointer;background:#fff;color:var(--ink);}
+.qtab.current{background:var(--accent);border-color:var(--accent);color:#fff;}
+.qtab.done{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);}
+.qtab.done.wrong{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+.qmeta{display:flex;justify-content:space-between;color:var(--muted);font-size:.82rem;margin-bottom:12px;flex-wrap:wrap;gap:4px;}
+.rw-row{display:flex;gap:10px;margin-bottom:14px;}
+.rw-btn{flex:1;padding:14px;border-radius:10px;border:2px solid var(--line);text-align:center;font-weight:700;cursor:pointer;background:#fff;color:var(--muted);}
+.rw-btn.right.active{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+.rw-btn.wrong.active{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+.charcount{font-size:.72rem;color:var(--muted);text-align:right;margin-top:3px;}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+@media(min-width:480px){.statgrid.four{grid-template-columns:repeat(4,1fr);}}
+.statcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center;}
+.statcard .n{font-size:1.5rem;font-weight:800;color:var(--navy);}
+.statcard .l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-top:2px;}
+.statcard.correct .n{color:var(--green);} .statcard.wrong .n{color:var(--red);}
+.box{border-radius:12px;padding:14px;margin-bottom:12px;}
+.box.green{background:var(--green-bg);} .box.red{background:var(--red-bg);} .box.yellow{background:var(--yellow-bg);}
+.box h3{margin:0 0 8px;font-size:.9rem;}
+.box.green h3{color:var(--green);} .box.red h3{color:var(--red);} .box.yellow h3{color:var(--yellow);}
+.box ul{margin:0;padding-left:18px;font-size:.86rem;}
+.box li{margin-bottom:4px;}
+.pill-badge{display:inline-block;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;}
+.pill-badge.strong{background:var(--green-bg);color:var(--green);}
+.pill-badge.weak{background:var(--red-bg);color:var(--red);}
+.pill-badge.average{background:var(--yellow-bg);color:var(--yellow);}
+.pill-badge.new{background:#EEE;color:var(--muted);}
+table{width:100%;border-collapse:collapse;font-size:.86rem;}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);}
+th{font-size:.7rem;text-transform:uppercase;color:var(--muted);}
+.backlink{background:none;border:none;color:var(--accent);font-weight:600;padding:0;margin-bottom:12px;font-size:.88rem;cursor:pointer;}
+.empty{padding:26px;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:12px;}
+.loginwrap{max-width:360px;margin:80px auto;padding:0 20px;text-align:center;}
+.loginwrap .logo{width:60px;height:60px;border-radius:14px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 16px;}
+.loginwrap h1{font-size:1.2rem;margin-bottom:4px;}
+.loginwrap p{color:var(--muted);font-size:.88rem;margin-bottom:20px;}
+.loginerr{color:var(--red);font-size:.85rem;margin-top:10px;min-height:18px;}
+.footnote{color:var(--muted);font-size:.78rem;text-align:center;margin-top:18px;}
+.chart-wrap{position:relative;height:220px;margin-top:8px;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:8px;font-size:.85rem;z-index:50;}
+.loading{padding:60px 0;text-align:center;color:var(--muted);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const HIERARCHY = {"English": {"Vocab": ["OWS", "Synonym", "Antonym", "Idiom", "Homonoym", "Misspelt"], "Grammar": ["Error Spot", "Fill in Blanks", "Sentence Improvement", "Voice", "Narration"], "Reading": ["PQRS", "Cloze", "Comprehnsion"]}, "Maths": {"Airthematic": ["Number System", "HCF & LCM", "Simplification", "Ratio & Proportion", "Partnership", "Mixture & Alligation", "Work & Time", "Pipe & Cistern", "Time, Speed & Distance", "Linear & Circular Race", "Boat & Stream", "Percentage", "Profit & Loss", "Discount", "Simple Interest", "Compound Interest", "Installment (EMI)", "Average", "Data Interpretation", "Mean, Median & Mode"], "Advance": ["Algebra", "Geometry", "Mensuration", "Trigonometry", "Height & Distance", "Coordinate Geometry", "Probability"]}, "Reasoning": {"Verbal": ["Analogy", "Odd One Out", "Coding-Decoding", "Series", "Missing Number", "Syllogism", "Statement & Conclusion", "Data Sufficiency", "Blood Relation", "Sitting Arrangement", "Direction", "Arithmetic Reasoning", "Mathematical Operations", "Word Arrangement", "Age", "Calendar", "Order & Ranking", "Inequality", "Word Formation", "Puzzle", "Input-Output", "Decision Making"], "Non-Verbal": ["Venn Diagram", "Cube & Dice", "Non-Verbal Series", "Counting of Figures", "Paper Cut & Fold", "Embedded Figure", "Completion of Figure", "Mirror & Water Images"]}, "General Studies": {"Polity": ["Constitution", "Sources of Indian Constitution", "Articles, Schedules, Parts & Lists", "Amendments", "Fundamental Rights & Duties", "Committee Reports", "Parliament", "President, Vice President & Prime Minister", "Judiciary", "Government Bodies", "Polity of Neighbouring Countries", "Miscellaneous"], "Economy": ["Basics of Economy", "Concepts of Demand and Supply", "Cost, Production, Consumption & Market", "National Income, Inflation, Budget, Taxation & GDP", "Money, Banking & Financial Institutions", "Navratna, Maharatna & PSUs", "International Organisations", "Government Schemes", "Five-Year Plans", "Indian Economy: Central Problems & Planning", "Stock, Debentures & Foreign Trade", "Fiscal Policy & Monetary Policy", "Miscellaneous"], "Geography": ["Solar System & Its Planets", "Longitudes & Latitudes", "Continents & Oceans", "Neighbouring Countries of India", "Indian Drainage System", "World Drainage System", "Minerals & Energy Resources in India", "Agriculture", "Soil", "Vegetation", "Climate", "Industries", "Biosphere Reserves", "Physiographic Divisions of India", "Transportation", "Population", "Atmosphere", "Rocks", "Mountains", "Volcanoes", "World Geography & Maps", "Miscellaneous"], "Ancient History": ["Prehistoric Age & Indus Valley Civilization", "Vedic Age", "Jainism", "Buddhism", "Mahajanapadas", "Mauryan Dynasty", "Gupta Dynasty", "Vardhana (Harsha) Dynasty", "Chola Dynasty", "Miscellaneous"], "Medieval History": ["Foreign Invasions", "Delhi Sultanate", "Slave Dynasty", "Khilji Dynasty", "Tughlaq Dynasty", "Sayyid Dynasty", "Lodi Dynasty", "Mughal Period", "Babur", "Humayun & Sher Shah Suri", "Akbar", "Jahangir", "Shah Jahan", "Aurangzeb", "Sikh Gurus", "Maratha Empire", "Vijayanagara Empire", "Wars & Treaties", "Miscellaneous"], "Modern History": ["Revolt of 1857", "Governors & Viceroys", "British Acts & Policies", "Partition of Bengal & Swadeshi Movement", "Gandhian Era", "Expansion of British Rule", "Revolutionary Movement", "Indian Freedom Struggle", "Socio-Religious Reform Movements", "Indian National Congress & Its Sessions", "Muslim League", "Miscellaneous"], "Science": ["Phy - Light & Optics", "Phy - Heat & Thermodynamics", "Phy - Fluid Mechanics", "Phy - Electric Current & Its Effects", "Phy - Force & Pressure", "Phy - Sound", "Phy - Gravitation", "Phy - Work & Energy", "Phy - Waves", "Phy - Radioactivity", "Phy - Discoveries", "Phy - Units & Measurements", "Phy - Miscellaneous", "Che - Structure of Atom", "Che - Metals, Non-metals & Alloys", "Che - Acids, Bases & Salts", "Che - Metallurgy", "Che - Organic Chemistry", "Che - Periodic Table", "Che - Ideal Gas Law", "Che - Chemical Properties", "Che - Solutions", "Che - Chemistry in Everyday Life", "Che - Discoveries", "Che - Common Names", "Che - Miscellaneous", "Bio - Scientific Names", "Bio - Nutrition in Animals", "Bio - Nutrition in Plants", "Bio - Deficiency Diseases", "Bio - Reproduction in Animals", "Bio - Reproduction in Plants", "Bio - Cell: Basic Unit of Life", "Bio - Sensory Organs", "Bio - Circulatory System", "Bio - Excretory System", "Bio - Endocrine (Exocrine) System", "Bio - Respiratory System", "Bio - Digestive System", "Bio - Nervous System", "Bio - Skeletal System", "Bio - Plant Kingdom", "Bio - Animal Kingdom", "Bio - Microorganisms", "Bio - Enzymes & Hormones", "Bio - Discoveries & Vaccines", "Bio - Scientific Study (Branches of Biology)", "Bio - Miscellaneous"], "Static": ["Dance", "Art Personalities", "Arts Awards", "Musical Instruments", "Festivals", "Fairs", "Songs", "Paintings, Dress & Tribes", "First in India & World", "Sports", "Books & Authors", "Famous Personalities", "Important Days", "States GK", "Organizations", "World GK", "Computer", "Full Forms", "Religious Places", "Awards", "Important Events", "Founders", "Government Schemes", "Miscellaneous"], "Current Affairs": ["Government Schemes", "Sports", "Appointments", "Awards & Honours", "Agreements & MoUs", "Defence", "National Affairs", "International Affairs", "Science & Technology", "Books & Authors", "Portals & Apps", "Obituaries", "Rankings & Indices", "Important Days & Themes"]}};
+const REASONS_CORRECT = ["I Know Well", "Option Elimination", "Educated Guess", "Lucky Guess"];
+const REASONS_WRONG = ["Concept Not Known", "Forgot Formula", "Forgot Fact", "Calculation Mistake", "Careless Mistake", "Time Pressure", "Wrong Interpretation", "Guess"];
+const PLATFORMS = ["Testbook", "Oliveboard", "Test Ranking"];
+const EXAMS = ["CGL", "CHSL", "MTS", "GD", "Selection Post", "Steno", "CPO", "JE"];
+const TEST_TYPES = ["PYCT", "PYST", "Quiz", "Topic Test", "Chapter Test", "Subject Test", "Live Mock", "Custom Mock"];
+const SUBJECTS = Object.keys(HIERARCHY);
+</script>
+<script src="/app.js"></script>
+</body>
+</html>
