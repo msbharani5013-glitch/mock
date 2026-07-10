@@ -53,7 +53,8 @@ app.get('/api/data', async (req, res) => {
   try {
     const tests = (await pool.query(
       `SELECT id, to_char(test_date,'YYYY-MM-DD') AS date, test_name AS "testName",
-              platform, exam, test_type AS "testType", total_questions AS "totalQuestions"
+              platform, exam, test_type AS "testType", total_questions AS "totalQuestions",
+              marks_correct AS "marksCorrect", marks_negative AS "marksNegative"
        FROM tests ORDER BY test_date ASC, created_at ASC`
     )).rows;
     const questions = (await pool.query(
@@ -76,13 +77,13 @@ app.get('/api/data', async (req, res) => {
 app.post('/api/tests', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { date, testName, platform, exam, testType, totalQuestions, questions } = req.body;
+    const { date, testName, platform, exam, testType, totalQuestions, marksCorrect, marksNegative, questions } = req.body;
     if (!date || !testName || !totalQuestions) return res.status(400).json({ error: 'Missing required fields' });
     const id = uid();
     await client.query('BEGIN');
     await client.query(
-      'INSERT INTO tests (id, test_date, test_name, platform, exam, test_type, total_questions) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [id, date, testName, platform || '', exam || '', testType || '', totalQuestions]
+      'INSERT INTO tests (id, test_date, test_name, platform, exam, test_type, total_questions, marks_correct, marks_negative) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [id, date, testName, platform || '', exam || '', testType || '', totalQuestions, marksCorrect || 0, marksNegative || 0]
     );
     for (const q of (questions || [])) {
       await client.query(

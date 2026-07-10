@@ -37,17 +37,22 @@ enter your passcode, and you're in.
 
 ## What's in this version
 - **Login** — simple passcode gate (set via `APP_PASSCODE`). Leave that variable blank/unset to disable it.
-- **Entry** — Test Information (name, platform, exam, test type, total questions, per-subject question
-  counts with a live total check) → a one-question-at-a-time wizard (Topic → Chapter → Right/Wrong →
-  Reason → Remarks, numbered tabs to jump between questions) → an instant result summary (score, strong
-  and weak topics, improvement tips).
-- **Progress → Overall Performance** — filter by date range / exam / platform, see total tests, questions,
-  correct/wrong, average accuracy, an accuracy-trend line chart, and a subject-accuracy donut chart.
-- **Progress → Subject Wise Performance** — pick a subject (+ optional filters), see a topic-by-topic
-  table with accuracy and a Strong/Average/Weak/New badge.
+- **Entry** — Test Information (name, platform, exam, test type, total questions, marks for a correct
+  answer, negative marks for a wrong answer, per-subject question counts with a live total check) → a
+  one-question-at-a-time wizard (Topic → Chapter → Right/Wrong → Reason → Remarks, numbered tabs to jump
+  between questions) → an instant result summary (score, accuracy, strong and weak topics, improvement
+  tips).
+- **Progress** — one page, fully reactive (no Filter button — every dropdown updates results instantly):
+  - Snapshot cards at the top (all tests, all time): total tests, questions, correct, wrong.
+  - **Subject** filter (default "All Subjects") → shows every subject's accuracy, weakest or strongest
+    first depending on the **Sort** dropdown.
+  - Pick a **Subject** → shows every chapter in that subject (across all its topics), weak/strong sorted.
+  - Add a **Topic** → narrows the chapter list to just that topic's chapters.
+  - Pick a specific **Chapter** → a focused view: totals, accuracy, and every remark you wrote for
+    questions in that chapter.
 - Subjects, topics and chapters are the exact list you provided — pre-loaded, no editing screen (no
-  "Modify" page, as requested). If you ever want to change the hierarchy, it lives in the `HIERARCHY`
-  object at the top of `index.html` — editing it there and redeploying is the only way to change it now.
+  "Modify" page). If you ever want to change the hierarchy, it lives in the `HIERARCHY` object at the
+  top of `index.html` — editing it there and redeploying is the only way to change it now.
 
 ## Troubleshooting
 - **"Cannot GET /"**: check Render's Logs tab. If it says `index.html not found next to server.js`,

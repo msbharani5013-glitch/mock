@@ -120,9 +120,7 @@ function render() {
     entry_info: pageEntryInfo,
     entry_questions: pageEntryQuestions,
     entry_result: pageEntryResult,
-    progress: pageProgressHome,
-    progress_overall: pageProgressOverall,
-    progress_subject: pageProgressSubject,
+    progress: pageProgress,
   };
   const fn = pages[route.page] || pageDashboard;
   try {
@@ -201,7 +199,11 @@ function pageDashboard() {
     const table = el(`<table style="margin-top:8px;"><thead><tr><th>Date</th><th>Test</th><th>Score</th></tr></thead><tbody></tbody></table>`);
     recent.forEach(t => {
       const c = t.questions.filter(q => q.correctWrong === "Correct").length;
-      table.querySelector("tbody").appendChild(el(`<tr><td>${t.date}</td><td>${esc(t.testName)}</td><td>${c}/${t.totalQuestions}</td></tr>`));
+      const w = t.questions.filter(q => q.correctWrong === "Wrong").length;
+      const mc = t.marksCorrect != null ? +t.marksCorrect : 2;
+      const mw = t.marksNegative != null ? +t.marksNegative : 0.5;
+      const score = +(c * mc - w * mw).toFixed(2);
+      table.querySelector("tbody").appendChild(el(`<tr><td>${t.date}</td><td>${esc(t.testName)}</td><td>${c}/${t.totalQuestions} (${score})</td></tr>`));
     });
     card.appendChild(table);
     wrap.appendChild(card);
@@ -214,6 +216,7 @@ function pageDashboard() {
 function pageEntryInfo() {
   draft = draft || {
     date: todayStr(), testName: "", platform: "", exam: "", testType: "", totalQuestions: "",
+    marksCorrect: 2, marksNegative: 0.5,
     subjects: Object.fromEntries(SUBJECTS.map(s => [s, { included: true, count: 0 }]))
   };
   const wrap = el(`<div></div>`);
@@ -236,6 +239,11 @@ function pageEntryInfo() {
   card.appendChild(g2b);
 
   card.appendChild(el(`<div class="field"><label>Total Questions</label><input type="number" id="f_total" min="1" max="500" value="${draft.totalQuestions}" placeholder="Enter total questions (1-500)"></div>`));
+
+  const g2c = el(`<div class="grid2"></div>`);
+  g2c.appendChild(el(`<div class="field"><label>Marks for Correct Answer</label><input type="number" id="f_mcorrect" min="0" step="0.01" value="${draft.marksCorrect}"></div>`));
+  g2c.appendChild(el(`<div class="field"><label>Negative Marks for Wrong Answer</label><input type="number" id="f_mwrong" min="0" step="0.01" value="${draft.marksNegative}"></div>`));
+  card.appendChild(g2c);
   wrap.appendChild(card);
 
   const subjCard = el(`<div class="card"><label>Subjects &amp; Question Count</label></div>`);
@@ -289,6 +297,8 @@ function pageEntryInfo() {
     draft.exam = card.querySelector("#f_exam").value;
     draft.testType = card.querySelector("#f_ttype").value;
     draft.totalQuestions = currentTotalTarget();
+    draft.marksCorrect = parseFloat(card.querySelector("#f_mcorrect").value || "0");
+    draft.marksNegative = parseFloat(card.querySelector("#f_mwrong").value || "0");
     // build question slots in subject order
     const questions = [];
     let qn = 1;
@@ -384,7 +394,8 @@ function pageEntryQuestions() {
       try {
         const payload = {
           date: draft.date, testName: draft.testName, platform: draft.platform, exam: draft.exam,
-          testType: draft.testType, totalQuestions: draft.totalQuestions, questions: draft.questions
+          testType: draft.testType, totalQuestions: draft.totalQuestions,
+          marksCorrect: draft.marksCorrect, marksNegative: draft.marksNegative, questions: draft.questions
         };
         await apiPost("/api/tests", payload);
         await loadData();
@@ -411,6 +422,10 @@ function pageEntryResult() {
   const wrong = t.questions.filter(q => q.correctWrong === "Wrong").length;
   const total = t.questions.length;
   const accuracy = total ? correct / total : 0;
+  const marksCorrect = t.marksCorrect != null ? +t.marksCorrect : 2;
+  const marksNegative = t.marksNegative != null ? +t.marksNegative : 0.5;
+  const score = +(correct * marksCorrect - wrong * marksNegative).toFixed(2);
+  const maxScore = +(total * marksCorrect).toFixed(2);
 
   wrap.appendChild(el(`<div style="text-align:center;margin-bottom:10px;"><span style="font-size:1.6rem;">&#9989;</span></div>`));
   wrap.appendChild(el(`<h1 style="text-align:center;">Test Submitted Successfully!</h1><p class="lead" style="text-align:center;">Here is your analysis summary</p>`));
@@ -421,6 +436,7 @@ function pageEntryResult() {
   stats.appendChild(el(`<div class="statcard wrong"><div class="n">${wrong}</div><div class="l">Wrong</div></div>`));
   stats.appendChild(el(`<div class="statcard"><div class="n">${pct(accuracy)}</div><div class="l">Accuracy</div></div>`));
   wrap.appendChild(stats);
+  wrap.appendChild(el(`<div class="statcard" style="margin-bottom:14px;"><div class="n">${score} / ${maxScore}</div><div class="l">Score (+${marksCorrect} correct, &minus;${marksNegative} wrong)</div></div>`));
 
   // topic-level stats for this test
   const topicMap = {};
@@ -469,207 +485,148 @@ function pageEntryResult() {
   return wrap;
 }
 
-/* ============================== PROGRESS HOME ============================== */
-function pageProgressHome() {
+/* ============================== PROGRESS (unified, reactive) ============================== */
+let progressFilters = { subject: "", topic: "", chapter: "", sort: "weak" };
+
+function chaptersForScope(subject, topic) {
+  // returns [{value, label}] — value is "Topic|||Chapter" so same-named chapters under
+  // different topics (e.g. "Miscellaneous") never collide.
+  const out = [];
+  const topics = topic ? [topic] : topicsOf(subject);
+  topics.forEach(tp => {
+    chaptersOf(subject, tp).forEach(ch => out.push({ value: tp + "|||" + ch, topic: tp, chapter: ch, label: topic ? ch : (tp + " — " + ch) }));
+  });
+  return out;
+}
+
+function pageProgress() {
   const wrap = el(`<div></div>`);
   const back = el(`<button class="backlink">&larr; Back to dashboard</button>`);
   back.onclick = () => go("dashboard");
   wrap.appendChild(back);
-  wrap.appendChild(el(`<h1>Progress</h1>`));
-  const a = el(`<button class="tile blue"><div class="icon">&#128202;</div><div><h3>Overall Performance</h3><p>View overall stats and performance summary</p></div></button>`);
-  a.onclick = () => go("progress_overall");
-  const b = el(`<button class="tile green"><div class="icon">&#128201;</div><div><h3>Subject Wise Performance</h3><p>Analyze performance subject by subject</p></div></button>`);
-  b.onclick = () => go("progress_subject");
-  wrap.appendChild(a); wrap.appendChild(b);
-  return wrap;
-}
+  wrap.appendChild(el(`<h1>Progress</h1><p class="lead">Pick a subject, topic or chapter to see strong and weak spots. Updates instantly.</p>`));
 
-/* ============================== PROGRESS: OVERALL ============================== */
-let overallFilters = { dateFrom: "", dateTo: "", exam: "All Exams", platform: "All Platforms" };
-let overallCharts = [];
-function pageProgressOverall() {
-  const wrap = el(`<div></div>`);
-  const back = el(`<button class="backlink">&larr; Back to progress</button>`);
-  back.onclick = () => go("progress");
-  wrap.appendChild(back);
-  wrap.appendChild(el(`<h1>Overall Performance</h1>`));
+  // ---- overall snapshot (always all tests, unfiltered) ----
+  const allQ = allQuestionsFlat();
+  const totalQ = allQ.length;
+  const totalC = allQ.filter(q => q.correctWrong === "Correct").length;
+  const totalW = allQ.filter(q => q.correctWrong === "Wrong").length;
+  const snap = el(`<div class="statgrid four" style="margin-bottom:14px;"></div>`);
+  snap.appendChild(el(`<div class="statcard"><div class="n">${db.tests.length}</div><div class="l">Total Tests</div></div>`));
+  snap.appendChild(el(`<div class="statcard"><div class="n">${totalQ}</div><div class="l">Questions</div></div>`));
+  snap.appendChild(el(`<div class="statcard correct"><div class="n">${totalC}</div><div class="l">Correct</div></div>`));
+  snap.appendChild(el(`<div class="statcard wrong"><div class="n">${totalW}</div><div class="l">Wrong</div></div>`));
+  wrap.appendChild(snap);
 
+  // ---- filter row ----
   const filterCard = el(`<div class="card"></div>`);
   const g3 = el(`<div class="grid3"></div>`);
-  g3.appendChild(el(`<div class="field"><label>Date From</label><input type="date" id="ff_from" value="${overallFilters.dateFrom}"></div>`));
-  g3.appendChild(el(`<div class="field"><label>Date To</label><input type="date" id="ff_to" value="${overallFilters.dateTo}"></div>`));
-  g3.appendChild(el(`<div class="field"><label>Exam</label><select id="ff_exam"><option>All Exams</option>${EXAMS.map(x => `<option ${x === overallFilters.exam ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
+  g3.appendChild(el(`<div class="field"><label>Subject</label><select id="pf_subject"><option value="">All Subjects</option>${SUBJECTS.map(s => `<option value="${esc(s)}" ${s === progressFilters.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  g3.appendChild(el(`<div class="field"><label>Topic</label><select id="pf_topic"><option value="">All Topics</option></select></div>`));
+  g3.appendChild(el(`<div class="field"><label>Chapter</label><select id="pf_chapter"><option value="">All Chapters</option></select></div>`));
   filterCard.appendChild(g3);
-  const g1 = el(`<div class="field"><label>Platform</label><select id="ff_platform" style="max-width:240px;"><option>All Platforms</option>${PLATFORMS.map(x => `<option ${x === overallFilters.platform ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`);
-  filterCard.appendChild(g1);
-  const filterBtn = el(`<div class="btnrow"><button id="apply">Filter</button></div>`);
-  filterCard.appendChild(filterBtn);
+  filterCard.appendChild(el(`<div class="field"><label>Sort</label>
+    <select id="pf_sort">
+      <option value="weak" ${progressFilters.sort === "weak" ? "selected" : ""}>Weak to Strong</option>
+      <option value="strong" ${progressFilters.sort === "strong" ? "selected" : ""}>Strong to Weak</option>
+    </select></div>`));
   wrap.appendChild(filterCard);
 
   const resultsHost = el(`<div></div>`);
   wrap.appendChild(resultsHost);
 
-  function applyAndRender() {
-    overallFilters = {
-      dateFrom: filterCard.querySelector("#ff_from").value,
-      dateTo: filterCard.querySelector("#ff_to").value,
-      exam: filterCard.querySelector("#ff_exam").value,
-      platform: filterCard.querySelector("#ff_platform").value,
-    };
-    renderOverallResults(resultsHost);
+  const subjectSel = filterCard.querySelector("#pf_subject");
+  const topicSel = filterCard.querySelector("#pf_topic");
+  const chapterSel = filterCard.querySelector("#pf_chapter");
+  const sortSel = filterCard.querySelector("#pf_sort");
+
+  function fillTopicOptions() {
+    const subj = subjectSel.value;
+    topicSel.innerHTML = `<option value="">All Topics</option>` + (subj ? topicsOf(subj).map(t => `<option value="${esc(t)}" ${t === progressFilters.topic ? "selected" : ""}>${esc(t)}</option>`).join("") : "");
+    topicSel.disabled = !subj;
   }
-  filterBtn.querySelector("#apply").onclick = applyAndRender;
-  renderOverallResults(resultsHost);
+  function fillChapterOptions() {
+    const subj = subjectSel.value;
+    const topic = topicSel.value;
+    const opts = subj ? chaptersForScope(subj, topic || null) : [];
+    chapterSel.innerHTML = `<option value="">All Chapters</option>` + opts.map(o => `<option value="${esc(o.value)}" ${o.value === progressFilters.chapter ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+    chapterSel.disabled = !subj;
+  }
+
+  fillTopicOptions();
+  fillChapterOptions();
+
+  subjectSel.addEventListener("change", () => {
+    progressFilters.subject = subjectSel.value;
+    progressFilters.topic = ""; progressFilters.chapter = "";
+    fillTopicOptions(); fillChapterOptions();
+    renderProgressResults(resultsHost);
+  });
+  topicSel.addEventListener("change", () => {
+    progressFilters.topic = topicSel.value;
+    progressFilters.chapter = "";
+    fillChapterOptions();
+    renderProgressResults(resultsHost);
+  });
+  chapterSel.addEventListener("change", () => {
+    progressFilters.chapter = chapterSel.value;
+    renderProgressResults(resultsHost);
+  });
+  sortSel.addEventListener("change", () => {
+    progressFilters.sort = sortSel.value;
+    renderProgressResults(resultsHost);
+  });
+
+  renderProgressResults(resultsHost);
   return wrap;
 }
 
-function renderOverallResults(host) {
+function sortRows(rows, sortMode) {
+  const attempted = rows.filter(r => r.total > 0);
+  const unattempted = rows.filter(r => r.total === 0);
+  attempted.sort((a, b) => sortMode === "weak" ? a.acc - b.acc : b.acc - a.acc);
+  return attempted.concat(unattempted);
+}
+
+function renderProgressResults(host) {
   host.innerHTML = "";
-  overallCharts.forEach(c => c.destroy());
-  overallCharts = [];
+  const f = progressFilters;
 
-  const tests = filterTests(db.tests, overallFilters).sort((a, b) => new Date(a.date) - new Date(b.date));
-  if (!tests.length) { host.appendChild(el(`<div class="empty">No tests match this filter.</div>`)); return; }
-
-  let totalQ = 0, totalC = 0, totalW = 0;
-  tests.forEach(t => { t.questions.forEach(q => { totalQ++; if (q.correctWrong === "Correct") totalC++; if (q.correctWrong === "Wrong") totalW++; }); });
-  const avgAcc = totalQ ? totalC / totalQ : 0;
-
-  const stats = el(`<div class="statgrid four"></div>`);
-  stats.appendChild(el(`<div class="statcard"><div class="n">${tests.length}</div><div class="l">Total Tests</div></div>`));
-  stats.appendChild(el(`<div class="statcard"><div class="n">${totalQ}</div><div class="l">Total Questions</div></div>`));
-  stats.appendChild(el(`<div class="statcard correct"><div class="n">${totalC}</div><div class="l">Correct</div></div>`));
-  stats.appendChild(el(`<div class="statcard wrong"><div class="n">${totalW}</div><div class="l">Wrong</div></div>`));
-  host.appendChild(stats);
-  host.appendChild(el(`<div class="statcard" style="margin-bottom:14px;"><div class="n">${pct(avgAcc)}</div><div class="l">Average Accuracy</div></div>`));
-
-  const trendCard = el(`<div class="card"><h2>Accuracy Trend</h2><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>`);
-  host.appendChild(trendCard);
-  const donutCard = el(`<div class="card"><h2>Subject Wise Accuracy</h2><div class="chart-wrap"><canvas id="subjChart"></canvas></div></div>`);
-  host.appendChild(donutCard);
-
-  if (typeof Chart === "undefined") {
-    trendCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Chart library failed to load (check your internet connection) — the stats above are still accurate.</div>';
-    donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Chart library failed to load (check your internet connection) — the stats above are still accurate.</div>';
+  // ---- All Subjects: subject-level table ----
+  if (!f.subject) {
+    const rows = SUBJECTS.map(subj => {
+      const qs = allQuestionsFlat().filter(q => q.subject === subj);
+      const c = qs.filter(q => q.correctWrong === "Correct").length;
+      const total = qs.length;
+      const acc = total ? c / total : 0;
+      return { name: subj, total, correct: c, wrong: total - c, acc, cls: classify(acc, total) };
+    });
+    const sorted = sortRows(rows, f.sort);
+    const card = el(`<div class="card"></div>`);
+    const table = el(`<table><thead><tr><th>Subject</th><th>Total</th><th>Correct</th><th>Wrong</th><th>Accuracy</th><th>Strength</th></tr></thead><tbody></tbody></table>`);
+    sorted.forEach(r => {
+      table.querySelector("tbody").appendChild(el(`
+        <tr>
+          <td>${esc(r.name)}</td>
+          <td>${r.total}</td>
+          <td>${r.correct}</td>
+          <td>${r.wrong}</td>
+          <td>${r.total ? pct(r.acc) : "—"}</td>
+          <td><span class="pill-badge ${r.cls}">${badgeLabel(r.cls)}</span></td>
+        </tr>`));
+    });
+    card.appendChild(table);
+    host.appendChild(card);
     return;
   }
 
-  try {
-    const labels = tests.map((t, i) => "T" + (i + 1));
-    const accData = tests.map(t => {
-      const c = t.questions.filter(q => q.correctWrong === "Correct").length;
-      return t.questions.length ? +(c / t.questions.length * 100).toFixed(1) : 0;
-    });
-    const trendCtx = trendCard.querySelector("#trendChart").getContext("2d");
-    overallCharts.push(new Chart(trendCtx, {
-      type: "line",
-      data: { labels, datasets: [{ label: "Accuracy %", data: accData, borderColor: "#2A5CAA", backgroundColor: "rgba(42,92,170,.12)", tension: .3, fill: true, pointRadius: 3 }] },
-      options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: false } } }
-    }));
-  } catch (e) {
-    console.error("Trend chart failed", e);
-    trendCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Couldn\'t draw this chart.</div>';
-  }
-
-  try {
-    const subjAcc = {};
-    SUBJECTS.forEach(s => subjAcc[s] = { c: 0, t: 0 });
-    tests.forEach(t => t.questions.forEach(q => {
-      if (!subjAcc[q.subject]) return;
-      subjAcc[q.subject].t++;
-      if (q.correctWrong === "Correct") subjAcc[q.subject].c++;
-    }));
-    const subjLabels = SUBJECTS.filter(s => subjAcc[s].t > 0);
-    const subjData = subjLabels.map(s => +(subjAcc[s].c / subjAcc[s].t * 100).toFixed(1));
-    const colors = ["#6C63FF", "#2A9D8F", "#E9A23B", "#B23A2E", "#2A5CAA"];
-    if (subjLabels.length) {
-      const donutCtx = donutCard.querySelector("#subjChart").getContext("2d");
-      overallCharts.push(new Chart(donutCtx, {
-        type: "doughnut",
-        data: { labels: subjLabels, datasets: [{ data: subjData, backgroundColor: subjLabels.map((_, i) => colors[i % colors.length]) }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
-      }));
-    } else {
-      donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">No subject data yet.</div>';
-    }
-  } catch (e) {
-    console.error("Donut chart failed", e);
-    donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Couldn\'t draw this chart.</div>';
-  }
-}
-
-/* ============================== PROGRESS: SUBJECT-WISE ============================== */
-let subjectFilters = { subject: SUBJECTS[0], chapter: "", dateFrom: "", dateTo: "", platform: "All Platforms", testType: "All Types" };
-
-function chapterOptionsFor(subject) {
-  const opts = [];
-  topicsOf(subject).forEach(topic => {
-    chaptersOf(subject, topic).forEach(chap => opts.push({ value: topic + "|||" + chap, label: topic + " — " + chap }));
-  });
-  return opts;
-}
-
-function pageProgressSubject() {
-  const wrap = el(`<div></div>`);
-  const back = el(`<button class="backlink">&larr; Back to progress</button>`);
-  back.onclick = () => go("progress");
-  wrap.appendChild(back);
-  wrap.appendChild(el(`<h1>Subject Wise Performance</h1>`));
-
-  const filterCard = el(`<div class="card"></div>`);
-  const g3a = el(`<div class="grid3"></div>`);
-  g3a.appendChild(el(`<div class="field"><label>Select Subject</label><select id="sf_subject">${SUBJECTS.map(s => `<option ${s === subjectFilters.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
-  const chapField = el(`<div class="field"><label>Chapter</label><select id="sf_chapter"></select></div>`);
-  g3a.appendChild(chapField);
-  g3a.appendChild(el(`<div class="field"><label>Date From</label><input type="date" id="sf_from" value="${subjectFilters.dateFrom}"></div>`));
-  filterCard.appendChild(g3a);
-  const g2b = el(`<div class="grid2"></div>`);
-  g2b.appendChild(el(`<div class="field"><label>Date To</label><input type="date" id="sf_to" value="${subjectFilters.dateTo}"></div>`));
-  g2b.appendChild(el(`<div class="field"><label>Platform</label><select id="sf_platform"><option>All Platforms</option>${PLATFORMS.map(x => `<option ${x === subjectFilters.platform ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
-  filterCard.appendChild(g2b);
-  filterCard.appendChild(el(`<div class="field"><label>Test Type</label><select id="sf_ttype"><option>All Types</option>${TEST_TYPES.map(x => `<option ${x === subjectFilters.testType ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
-  const filterBtn = el(`<div class="btnrow"><button id="apply">Filter</button></div>`);
-  filterCard.appendChild(filterBtn);
-  wrap.appendChild(filterCard);
-
-  function fillChapterOptions(selectedSubject, selectedChapterValue) {
-    const sel = filterCard.querySelector("#sf_chapter");
-    const opts = chapterOptionsFor(selectedSubject);
-    sel.innerHTML = `<option value="">All Chapters</option>` + opts.map(o => `<option value="${esc(o.value)}" ${o.value === selectedChapterValue ? "selected" : ""}>${esc(o.label)}</option>`).join("");
-  }
-  filterCard.querySelector("#sf_subject").addEventListener("change", e => fillChapterOptions(e.target.value, ""));
-  fillChapterOptions(subjectFilters.subject, subjectFilters.chapter);
-
-  const resultsHost = el(`<div></div>`);
-  wrap.appendChild(resultsHost);
-
-  function applyAndRender() {
-    subjectFilters = {
-      subject: filterCard.querySelector("#sf_subject").value,
-      chapter: filterCard.querySelector("#sf_chapter").value,
-      dateFrom: filterCard.querySelector("#sf_from").value,
-      dateTo: filterCard.querySelector("#sf_to").value,
-      platform: filterCard.querySelector("#sf_platform").value,
-      testType: filterCard.querySelector("#sf_ttype").value,
-    };
-    renderSubjectResults(resultsHost);
-  }
-  filterBtn.querySelector("#apply").onclick = applyAndRender;
-  renderSubjectResults(resultsHost);
-  return wrap;
-}
-
-function renderSubjectResults(host) {
-  host.innerHTML = "";
-  const tests = filterTests(db.tests, subjectFilters);
-
-  if (subjectFilters.chapter) {
-    // single-chapter focused view
-    const [topic, chapter] = subjectFilters.chapter.split("|||");
+  // ---- Specific chapter chosen: deep-dive view ----
+  if (f.chapter) {
+    const [topic, chapter] = f.chapter.split("|||");
     let correct = 0, total = 0;
     const remarksList = [];
-    tests.forEach(t => t.questions.forEach(q => {
-      if (q.subject !== subjectFilters.subject || q.topic !== topic || q.chapter !== chapter) return;
+    db.tests.forEach(t => t.questions.forEach(q => {
+      if (q.subject !== f.subject || q.topic !== topic || q.chapter !== chapter) return;
       total++;
       if (q.correctWrong === "Correct") correct++;
       if (q.remarks) remarksList.push({ date: t.date, testName: t.testName, remarks: q.remarks, correctWrong: q.correctWrong });
@@ -698,29 +655,28 @@ function renderSubjectResults(host) {
     return;
   }
 
-  // All Chapters -> topic-level breakdown
-  const topicMap = {};
-  topicsOf(subjectFilters.subject).forEach(t => { topicMap[t] = { correct: 0, total: 0 }; });
-  tests.forEach(t => t.questions.forEach(q => {
-    if (q.subject !== subjectFilters.subject || !q.topic) return;
-    if (!topicMap[q.topic]) topicMap[q.topic] = { correct: 0, total: 0 };
-    topicMap[q.topic].total++;
-    if (q.correctWrong === "Correct") topicMap[q.topic].correct++;
-  }));
+  // ---- Subject chosen (+ optionally Topic), Chapter = All: chapter-level table ----
+  const scopeChapters = chaptersForScope(f.subject, f.topic || null);
+  const rows = scopeChapters.map(o => {
+    let correct = 0, total = 0;
+    db.tests.forEach(t => t.questions.forEach(q => {
+      if (q.subject !== f.subject || q.topic !== o.topic || q.chapter !== o.chapter) return;
+      total++;
+      if (q.correctWrong === "Correct") correct++;
+    }));
+    const acc = total ? correct / total : 0;
+    return { name: o.label, total, correct, wrong: total - correct, acc, cls: classify(acc, total) };
+  });
+  const sorted = sortRows(rows, f.sort);
 
-  const rows = Object.entries(topicMap).map(([topic, v]) => ({
-    topic, total: v.total, correct: v.correct, wrong: v.total - v.correct,
-    acc: v.total ? v.correct / v.total : 0, cls: classify(v.total ? v.correct / v.total : 0, v.total)
-  })).sort((a, b) => a.acc - b.acc);
-
-  if (!rows.length) { host.appendChild(el(`<div class="empty">No topics found for ${esc(subjectFilters.subject)}.</div>`)); return; }
+  if (!sorted.length) { host.appendChild(el(`<div class="empty">No chapters found.</div>`)); return; }
 
   const card = el(`<div class="card"></div>`);
-  const table = el(`<table><thead><tr><th>Topic</th><th>Total</th><th>Correct</th><th>Wrong</th><th>Accuracy</th><th>Strength</th></tr></thead><tbody></tbody></table>`);
-  rows.forEach(r => {
+  const table = el(`<table><thead><tr><th>Chapter</th><th>Total</th><th>Correct</th><th>Wrong</th><th>Accuracy</th><th>Strength</th></tr></thead><tbody></tbody></table>`);
+  sorted.forEach(r => {
     table.querySelector("tbody").appendChild(el(`
       <tr>
-        <td>${esc(r.topic)}</td>
+        <td>${esc(r.name)}</td>
         <td>${r.total}</td>
         <td>${r.correct}</td>
         <td>${r.wrong}</td>
