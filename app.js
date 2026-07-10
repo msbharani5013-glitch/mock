@@ -125,7 +125,15 @@ function render() {
     progress_subject: pageProgressSubject,
   };
   const fn = pages[route.page] || pageDashboard;
-  app.appendChild(fn());
+  try {
+    app.appendChild(fn());
+  } catch (e) {
+    console.error("Render error on page", route.page, e);
+    app.appendChild(el(`<div class="empty">Something went wrong showing this page (${esc(e.message)}). Try going back and opening it again.</div>`));
+    const back = el(`<button class="backlink">&larr; Back to dashboard</button>`);
+    back.onclick = () => go("dashboard");
+    app.appendChild(back);
+  }
 }
 
 /* ============================== LOGIN ============================== */
@@ -540,42 +548,67 @@ function renderOverallResults(host) {
   const donutCard = el(`<div class="card"><h2>Subject Wise Accuracy</h2><div class="chart-wrap"><canvas id="subjChart"></canvas></div></div>`);
   host.appendChild(donutCard);
 
-  const labels = tests.map((t, i) => "T" + (i + 1));
-  const accData = tests.map(t => {
-    const c = t.questions.filter(q => q.correctWrong === "Correct").length;
-    return t.questions.length ? +(c / t.questions.length * 100).toFixed(1) : 0;
-  });
-  const trendCtx = trendCard.querySelector("#trendChart").getContext("2d");
-  overallCharts.push(new Chart(trendCtx, {
-    type: "line",
-    data: { labels, datasets: [{ label: "Accuracy %", data: accData, borderColor: "#2A5CAA", backgroundColor: "rgba(42,92,170,.12)", tension: .3, fill: true, pointRadius: 3 }] },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: false } } }
-  }));
+  if (typeof Chart === "undefined") {
+    trendCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Chart library failed to load (check your internet connection) — the stats above are still accurate.</div>';
+    donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Chart library failed to load (check your internet connection) — the stats above are still accurate.</div>';
+    return;
+  }
 
-  const subjAcc = {};
-  SUBJECTS.forEach(s => subjAcc[s] = { c: 0, t: 0 });
-  tests.forEach(t => t.questions.forEach(q => {
-    if (!subjAcc[q.subject]) return;
-    subjAcc[q.subject].t++;
-    if (q.correctWrong === "Correct") subjAcc[q.subject].c++;
-  }));
-  const subjLabels = SUBJECTS.filter(s => subjAcc[s].t > 0);
-  const subjData = subjLabels.map(s => +(subjAcc[s].c / subjAcc[s].t * 100).toFixed(1));
-  const colors = ["#6C63FF", "#2A9D8F", "#E9A23B", "#B23A2E", "#2A5CAA"];
-  const donutCtx = donutCard.querySelector("#subjChart").getContext("2d");
-  if (subjLabels.length) {
-    overallCharts.push(new Chart(donutCtx, {
-      type: "doughnut",
-      data: { labels: subjLabels, datasets: [{ data: subjData, backgroundColor: subjLabels.map((_, i) => colors[i % colors.length]) }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
+  try {
+    const labels = tests.map((t, i) => "T" + (i + 1));
+    const accData = tests.map(t => {
+      const c = t.questions.filter(q => q.correctWrong === "Correct").length;
+      return t.questions.length ? +(c / t.questions.length * 100).toFixed(1) : 0;
+    });
+    const trendCtx = trendCard.querySelector("#trendChart").getContext("2d");
+    overallCharts.push(new Chart(trendCtx, {
+      type: "line",
+      data: { labels, datasets: [{ label: "Accuracy %", data: accData, borderColor: "#2A5CAA", backgroundColor: "rgba(42,92,170,.12)", tension: .3, fill: true, pointRadius: 3 }] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: false } } }
     }));
-  } else {
-    donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">No subject data yet.</div>';
+  } catch (e) {
+    console.error("Trend chart failed", e);
+    trendCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Couldn\'t draw this chart.</div>';
+  }
+
+  try {
+    const subjAcc = {};
+    SUBJECTS.forEach(s => subjAcc[s] = { c: 0, t: 0 });
+    tests.forEach(t => t.questions.forEach(q => {
+      if (!subjAcc[q.subject]) return;
+      subjAcc[q.subject].t++;
+      if (q.correctWrong === "Correct") subjAcc[q.subject].c++;
+    }));
+    const subjLabels = SUBJECTS.filter(s => subjAcc[s].t > 0);
+    const subjData = subjLabels.map(s => +(subjAcc[s].c / subjAcc[s].t * 100).toFixed(1));
+    const colors = ["#6C63FF", "#2A9D8F", "#E9A23B", "#B23A2E", "#2A5CAA"];
+    if (subjLabels.length) {
+      const donutCtx = donutCard.querySelector("#subjChart").getContext("2d");
+      overallCharts.push(new Chart(donutCtx, {
+        type: "doughnut",
+        data: { labels: subjLabels, datasets: [{ data: subjData, backgroundColor: subjLabels.map((_, i) => colors[i % colors.length]) }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
+      }));
+    } else {
+      donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">No subject data yet.</div>';
+    }
+  } catch (e) {
+    console.error("Donut chart failed", e);
+    donutCard.querySelector(".chart-wrap").outerHTML = '<div class="empty">Couldn\'t draw this chart.</div>';
   }
 }
 
 /* ============================== PROGRESS: SUBJECT-WISE ============================== */
-let subjectFilters = { subject: SUBJECTS[0], dateFrom: "", dateTo: "", platform: "All Platforms", testType: "All Types" };
+let subjectFilters = { subject: SUBJECTS[0], chapter: "", dateFrom: "", dateTo: "", platform: "All Platforms", testType: "All Types" };
+
+function chapterOptionsFor(subject) {
+  const opts = [];
+  topicsOf(subject).forEach(topic => {
+    chaptersOf(subject, topic).forEach(chap => opts.push({ value: topic + "|||" + chap, label: topic + " — " + chap }));
+  });
+  return opts;
+}
+
 function pageProgressSubject() {
   const wrap = el(`<div></div>`);
   const back = el(`<button class="backlink">&larr; Back to progress</button>`);
@@ -586,16 +619,26 @@ function pageProgressSubject() {
   const filterCard = el(`<div class="card"></div>`);
   const g3a = el(`<div class="grid3"></div>`);
   g3a.appendChild(el(`<div class="field"><label>Select Subject</label><select id="sf_subject">${SUBJECTS.map(s => `<option ${s === subjectFilters.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  const chapField = el(`<div class="field"><label>Chapter</label><select id="sf_chapter"></select></div>`);
+  g3a.appendChild(chapField);
   g3a.appendChild(el(`<div class="field"><label>Date From</label><input type="date" id="sf_from" value="${subjectFilters.dateFrom}"></div>`));
-  g3a.appendChild(el(`<div class="field"><label>Date To</label><input type="date" id="sf_to" value="${subjectFilters.dateTo}"></div>`));
   filterCard.appendChild(g3a);
   const g2b = el(`<div class="grid2"></div>`);
+  g2b.appendChild(el(`<div class="field"><label>Date To</label><input type="date" id="sf_to" value="${subjectFilters.dateTo}"></div>`));
   g2b.appendChild(el(`<div class="field"><label>Platform</label><select id="sf_platform"><option>All Platforms</option>${PLATFORMS.map(x => `<option ${x === subjectFilters.platform ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
-  g2b.appendChild(el(`<div class="field"><label>Test Type</label><select id="sf_ttype"><option>All Types</option>${TEST_TYPES.map(x => `<option ${x === subjectFilters.testType ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
   filterCard.appendChild(g2b);
+  filterCard.appendChild(el(`<div class="field"><label>Test Type</label><select id="sf_ttype"><option>All Types</option>${TEST_TYPES.map(x => `<option ${x === subjectFilters.testType ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
   const filterBtn = el(`<div class="btnrow"><button id="apply">Filter</button></div>`);
   filterCard.appendChild(filterBtn);
   wrap.appendChild(filterCard);
+
+  function fillChapterOptions(selectedSubject, selectedChapterValue) {
+    const sel = filterCard.querySelector("#sf_chapter");
+    const opts = chapterOptionsFor(selectedSubject);
+    sel.innerHTML = `<option value="">All Chapters</option>` + opts.map(o => `<option value="${esc(o.value)}" ${o.value === selectedChapterValue ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+  }
+  filterCard.querySelector("#sf_subject").addEventListener("change", e => fillChapterOptions(e.target.value, ""));
+  fillChapterOptions(subjectFilters.subject, subjectFilters.chapter);
 
   const resultsHost = el(`<div></div>`);
   wrap.appendChild(resultsHost);
@@ -603,6 +646,7 @@ function pageProgressSubject() {
   function applyAndRender() {
     subjectFilters = {
       subject: filterCard.querySelector("#sf_subject").value,
+      chapter: filterCard.querySelector("#sf_chapter").value,
       dateFrom: filterCard.querySelector("#sf_from").value,
       dateTo: filterCard.querySelector("#sf_to").value,
       platform: filterCard.querySelector("#sf_platform").value,
@@ -618,6 +662,43 @@ function pageProgressSubject() {
 function renderSubjectResults(host) {
   host.innerHTML = "";
   const tests = filterTests(db.tests, subjectFilters);
+
+  if (subjectFilters.chapter) {
+    // single-chapter focused view
+    const [topic, chapter] = subjectFilters.chapter.split("|||");
+    let correct = 0, total = 0;
+    const remarksList = [];
+    tests.forEach(t => t.questions.forEach(q => {
+      if (q.subject !== subjectFilters.subject || q.topic !== topic || q.chapter !== chapter) return;
+      total++;
+      if (q.correctWrong === "Correct") correct++;
+      if (q.remarks) remarksList.push({ date: t.date, testName: t.testName, remarks: q.remarks, correctWrong: q.correctWrong });
+    }));
+    if (!total) { host.appendChild(el(`<div class="empty">No questions logged yet for ${esc(topic)} — ${esc(chapter)}.</div>`)); return; }
+    const acc = correct / total;
+    const cls = classify(acc, total);
+    const card = el(`<div class="card"></div>`);
+    card.appendChild(el(`<h2>${esc(topic)} — ${esc(chapter)}</h2>`));
+    const stats = el(`<div class="statgrid four"></div>`);
+    stats.appendChild(el(`<div class="statcard"><div class="n">${total}</div><div class="l">Total</div></div>`));
+    stats.appendChild(el(`<div class="statcard correct"><div class="n">${correct}</div><div class="l">Correct</div></div>`));
+    stats.appendChild(el(`<div class="statcard wrong"><div class="n">${total - correct}</div><div class="l">Wrong</div></div>`));
+    stats.appendChild(el(`<div class="statcard"><div class="n">${pct(acc)}</div><div class="l">Accuracy</div></div>`));
+    card.appendChild(stats);
+    card.appendChild(el(`<span class="pill-badge ${cls}">${badgeLabel(cls)}</span>`));
+    host.appendChild(card);
+
+    if (remarksList.length) {
+      const remCard = el(`<div class="card"><h2>Remarks on this chapter</h2></div>`);
+      remarksList.slice().reverse().forEach(r => {
+        remCard.appendChild(el(`<div style="margin-bottom:10px;"><strong>${r.date} — ${esc(r.testName)}</strong> <span class="pill-badge ${r.correctWrong === "Correct" ? "strong" : "weak"}">${r.correctWrong}</span><div style="color:var(--muted);font-size:.85rem;">${esc(r.remarks)}</div></div>`));
+      });
+      host.appendChild(remCard);
+    }
+    return;
+  }
+
+  // All Chapters -> topic-level breakdown
   const topicMap = {};
   topicsOf(subjectFilters.subject).forEach(t => { topicMap[t] = { correct: 0, total: 0 }; });
   tests.forEach(t => t.questions.forEach(q => {
