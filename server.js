@@ -54,7 +54,9 @@ app.get('/api/data', async (req, res) => {
     const tests = (await pool.query(
       `SELECT id, to_char(test_date,'YYYY-MM-DD') AS date, test_name AS "testName",
               platform, exam, test_type AS "testType", total_questions AS "totalQuestions",
-              marks_correct AS "marksCorrect", marks_negative AS "marksNegative"
+              marks_correct AS "marksCorrect", marks_negative AS "marksNegative",
+              is_pyq AS "isPyq", pyq_exam_category AS "pyqExamCategory", pyq_standard AS "pyqStandard",
+              pyq_year AS "pyqYear", pyq_shift AS "pyqShift"
        FROM tests ORDER BY test_date ASC, created_at ASC`
     )).rows;
     const questions = (await pool.query(
@@ -77,13 +79,19 @@ app.get('/api/data', async (req, res) => {
 app.post('/api/tests', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { date, testName, platform, exam, testType, totalQuestions, marksCorrect, marksNegative, questions } = req.body;
+    const {
+      date, testName, platform, exam, testType, totalQuestions, marksCorrect, marksNegative,
+      isPyq, pyqExamCategory, pyqStandard, pyqYear, pyqShift, questions
+    } = req.body;
     if (!date || !testName || !totalQuestions) return res.status(400).json({ error: 'Missing required fields' });
     const id = uid();
     await client.query('BEGIN');
     await client.query(
-      'INSERT INTO tests (id, test_date, test_name, platform, exam, test_type, total_questions, marks_correct, marks_negative) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-      [id, date, testName, platform || '', exam || '', testType || '', totalQuestions, marksCorrect || 0, marksNegative || 0]
+      `INSERT INTO tests (id, test_date, test_name, platform, exam, test_type, total_questions, marks_correct, marks_negative,
+                          is_pyq, pyq_exam_category, pyq_standard, pyq_year, pyq_shift)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id, date, testName, platform || '', exam || '', testType || '', totalQuestions, marksCorrect || 0, marksNegative || 0,
+       !!isPyq, pyqExamCategory || null, pyqStandard || null, pyqYear || null, pyqShift || null]
     );
     for (const q of (questions || [])) {
       await client.query(
