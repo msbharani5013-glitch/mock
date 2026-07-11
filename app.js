@@ -121,6 +121,7 @@ function render() {
     entry_questions: pageEntryQuestions,
     entry_result: pageEntryResult,
     progress: pageProgress,
+    test_bank: pageTestBank,
   };
   const fn = pages[route.page] || pageDashboard;
   try {
@@ -190,8 +191,15 @@ function pageDashboard() {
       <div><h3>Progress</h3><p>View your performance &amp; stats</p></div>
     </button>`);
   progTile.onclick = () => go("progress");
+  const bankTile = el(`
+    <button class="tile" style="border-color:var(--line);">
+      <div class="icon" style="background:var(--yellow-bg);">&#128196;</div>
+      <div><h3>Test Count</h3><p>Track PYQ papers completed vs available</p></div>
+    </button>`);
+  bankTile.onclick = () => go("test_bank");
   wrap.appendChild(entryTile);
   wrap.appendChild(progTile);
+  wrap.appendChild(bankTile);
 
   if (db.tests.length) {
     const recent = [...db.tests].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
@@ -215,8 +223,10 @@ function pageDashboard() {
 /* ============================== ENTRY: TEST INFO ============================== */
 function pageEntryInfo() {
   draft = draft || {
+    mode: "manual",
     date: todayStr(), testName: "", platform: "", exam: "", testType: "", totalQuestions: "",
     marksCorrect: 2, marksNegative: 0.5,
+    isPyq: false, pyqExamCategory: "", pyqYear: "", pyqShift: "",
     subjects: Object.fromEntries(SUBJECTS.map(s => [s, { included: true, count: 0 }]))
   };
   const wrap = el(`<div></div>`);
@@ -225,6 +235,19 @@ function pageEntryInfo() {
   wrap.appendChild(back);
   wrap.appendChild(el(`<h1>Test Information</h1><p class="lead">Step 1 of 2</p>`));
 
+  const modeRow = el(`<div class="chip-toggle" style="margin-bottom:14px;">
+    <div class="chip ${draft.mode === "pyq" ? "active" : ""}" id="mode_pyq">PYQ (Previous Year Paper)</div>
+    <div class="chip ${draft.mode === "manual" ? "active" : ""}" id="mode_manual">Manual Entry</div>
+  </div>`);
+  modeRow.querySelector("#mode_pyq").onclick = () => { draft.mode = "pyq"; go("entry_info"); };
+  modeRow.querySelector("#mode_manual").onclick = () => { draft.mode = "manual"; go("entry_info"); };
+  wrap.appendChild(modeRow);
+
+  if (draft.mode === "pyq") return renderPyqEntryInfo(wrap, draft);
+  return renderManualEntryInfo(wrap, draft);
+}
+
+function renderManualEntryInfo(wrap, draft) {
   const card = el(`<div class="card"></div>`);
   card.appendChild(el(`<div class="field"><label>Test Name</label><input id="f_name" maxlength="200" value="${esc(draft.testName)}" placeholder="Enter test name (max 200 characters)"></div>`));
 
@@ -291,6 +314,8 @@ function pageEntryInfo() {
   redrawSubjects();
 
   nextBtn.onclick = () => {
+    draft.isPyq = false;
+    draft.pyqExamCategory = ""; draft.pyqStandard = ""; draft.pyqYear = ""; draft.pyqShift = "";
     draft.testName = card.querySelector("#f_name").value.trim() || "Untitled Test";
     draft.date = card.querySelector("#f_date").value || todayStr();
     draft.platform = card.querySelector("#f_platform").value;
@@ -308,6 +333,104 @@ function pageEntryInfo() {
         for (let i = 0; i < s.count; i++) {
           questions.push({ qNumber: qn++, subject: subj, topic: "", chapter: "", correctWrong: "", reason: "", remarks: "" });
         }
+      }
+    });
+    draft.questions = questions;
+    draft.currentIndex = 0;
+    go("entry_questions");
+  };
+  return wrap;
+}
+
+function renderPyqEntryInfo(wrap, draft) {
+  const examNames = Object.keys(TEST_BANK);
+  const card = el(`<div class="card"></div>`);
+  card.appendChild(el(`<div class="field"><label>Exam Name</label>
+    <select id="p_exam"><option value="">Select Exam</option>${examNames.map(x => `<option ${x === draft.pyqExamCategory ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></div>`));
+  const standardBadge = el(`<div class="field" id="p_standard_wrap" style="display:none;"><label>Standard</label><span class="pill-badge average" id="p_standard_badge"></span></div>`);
+  card.appendChild(standardBadge);
+
+  const g2 = el(`<div class="grid2"></div>`);
+  g2.appendChild(el(`<div class="field"><label>Test Year</label><select id="p_year"><option value="">Select Year</option></select></div>`));
+  g2.appendChild(el(`<div class="field"><label>Shift</label><select id="p_shift"><option value="">Select Shift</option>${SHIFTS.map(s => `<option ${s === draft.pyqShift ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  card.appendChild(g2);
+
+  card.appendChild(el(`<div class="field"><label>Date</label><input type="date" id="p_date" value="${draft.date}"></div>`));
+  wrap.appendChild(card);
+
+  const infoCard = el(`<div class="card" id="p_info" style="display:none;"><label>Auto-filled from Test Bank</label></div>`);
+  wrap.appendChild(infoCard);
+
+  const examSel = card.querySelector("#p_exam");
+  const yearSel = card.querySelector("#p_year");
+
+  function fillYears() {
+    const exam = examSel.value;
+    const bankExam = TEST_BANK[exam];
+    if (bankExam) {
+      standardBadge.style.display = "";
+      standardBadge.querySelector("#p_standard_badge").textContent = bankExam.standard;
+      const years = Object.keys(bankExam.years).sort((a, b) => b - a);
+      yearSel.innerHTML = `<option value="">Select Year</option>` + years.map(y => `<option ${y === String(draft.pyqYear) ? "selected" : ""}>${y}</option>`).join("");
+    } else {
+      standardBadge.style.display = "none";
+      yearSel.innerHTML = `<option value="">Select Year</option>`;
+    }
+    updateInfoCard();
+  }
+
+  function updateInfoCard() {
+    const exam = examSel.value, year = yearSel.value;
+    const bankYear = exam && year && TEST_BANK[exam] ? TEST_BANK[exam].years[year] : null;
+    if (!bankYear) { infoCard.style.display = "none"; nextBtn.disabled = true; return; }
+    infoCard.style.display = "";
+    const total = bankYear.subjects.reduce((a, b) => a + b, 0);
+    infoCard.innerHTML = `<label>Auto-filled from Test Bank</label>
+      <div class="grid3" style="margin-top:6px;">
+        <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Total Questions</span><strong>${total}</strong></div>
+        <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Marks</span><strong>+${bankYear.marksCorrect} / -${bankYear.marksNegative}</strong></div>
+        <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Papers this year</span><strong>${bankYear.count}</strong></div>
+      </div>
+      <div style="margin-top:8px;font-size:.85rem;color:var(--muted);">
+        English ${bankYear.subjects[0]} &nbsp;|&nbsp; Maths ${bankYear.subjects[1]} &nbsp;|&nbsp; Reasoning ${bankYear.subjects[2]} &nbsp;|&nbsp; General Studies ${bankYear.subjects[3]}
+      </div>`;
+    checkReady();
+  }
+
+  function checkReady() {
+    const ready = examSel.value && yearSel.value && card.querySelector("#p_shift").value && card.querySelector("#p_date").value;
+    nextBtn.disabled = !ready;
+  }
+
+  examSel.addEventListener("change", fillYears);
+  yearSel.addEventListener("change", updateInfoCard);
+  card.querySelector("#p_shift").addEventListener("change", checkReady);
+  card.querySelector("#p_date").addEventListener("change", checkReady);
+
+  const btnrow = el(`<div class="btnrow"><button id="next" disabled>Next: Enter Analysis &rarr;</button></div>`);
+  const nextBtn = btnrow.querySelector("#next");
+  wrap.appendChild(btnrow);
+
+  fillYears();
+
+  nextBtn.onclick = () => {
+    const exam = examSel.value, year = yearSel.value, shift = card.querySelector("#p_shift").value, date = card.querySelector("#p_date").value;
+    const bankYear = TEST_BANK[exam].years[year];
+    const standard = TEST_BANK[exam].standard;
+    draft.isPyq = true;
+    draft.pyqExamCategory = exam; draft.pyqStandard = standard; draft.pyqYear = parseInt(year, 10); draft.pyqShift = shift;
+    draft.date = date;
+    draft.testName = `${exam} — ${year} — ${shift}`;
+    draft.platform = ""; draft.exam = exam; draft.testType = "PYQ";
+    draft.marksCorrect = bankYear.marksCorrect; draft.marksNegative = bankYear.marksNegative;
+    draft.totalQuestions = bankYear.subjects.reduce((a, b) => a + b, 0);
+
+    const questions = [];
+    let qn = 1;
+    SUBJECTS.forEach((subj, i) => {
+      const count = bankYear.subjects[i] || 0;
+      for (let k = 0; k < count; k++) {
+        questions.push({ qNumber: qn++, subject: subj, topic: "", chapter: "", correctWrong: "", reason: "", remarks: "" });
       }
     });
     draft.questions = questions;
@@ -395,7 +518,9 @@ function pageEntryQuestions() {
         const payload = {
           date: draft.date, testName: draft.testName, platform: draft.platform, exam: draft.exam,
           testType: draft.testType, totalQuestions: draft.totalQuestions,
-          marksCorrect: draft.marksCorrect, marksNegative: draft.marksNegative, questions: draft.questions
+          marksCorrect: draft.marksCorrect, marksNegative: draft.marksNegative, questions: draft.questions,
+          isPyq: !!draft.isPyq, pyqExamCategory: draft.pyqExamCategory || "", pyqStandard: draft.pyqStandard || "",
+          pyqYear: draft.pyqYear || null, pyqShift: draft.pyqShift || ""
         };
         await apiPost("/api/tests", payload);
         await loadData();
@@ -429,6 +554,9 @@ function pageEntryResult() {
 
   wrap.appendChild(el(`<div style="text-align:center;margin-bottom:10px;"><span style="font-size:1.6rem;">&#9989;</span></div>`));
   wrap.appendChild(el(`<h1 style="text-align:center;">Test Submitted Successfully!</h1><p class="lead" style="text-align:center;">Here is your analysis summary</p>`));
+  if (t.isPyq) {
+    wrap.appendChild(el(`<p style="text-align:center;margin-top:-10px;"><span class="pill-badge average">PYQ &middot; ${esc(t.pyqExamCategory)} &middot; ${esc(String(t.pyqYear))} &middot; ${esc(t.pyqShift)}</span></p>`));
+  }
 
   const stats = el(`<div class="statgrid four"></div>`);
   stats.appendChild(el(`<div class="statcard"><div class="n">${total}</div><div class="l">Total Questions</div></div>`));
@@ -687,6 +815,175 @@ function renderProgressResults(host) {
   card.appendChild(table);
   host.appendChild(card);
 }
+
+/* ============================== TEST BANK (PYQ progress tracker) ============================== */
+let bankFilters = { standard: "", exam: "", year: "" };
+
+function pyqTestsInScope(exam, year) {
+  return db.tests.filter(t => t.isPyq && t.pyqExamCategory === exam && (year == null || String(t.pyqYear) === String(year)));
+}
+
+function pageTestBank() {
+  const wrap = el(`<div></div>`);
+  const back = el(`<button class="backlink">&larr; Back to dashboard</button>`);
+  back.onclick = () => go("dashboard");
+  wrap.appendChild(back);
+  wrap.appendChild(el(`<h1>Test Count</h1><p class="lead">PYQ papers completed vs available. Updates instantly.</p>`));
+
+  const standards = [...new Set(Object.values(TEST_BANK).map(e => e.standard))];
+  const filterCard = el(`<div class="card"></div>`);
+  const g3 = el(`<div class="grid3"></div>`);
+  g3.appendChild(el(`<div class="field"><label>Standard</label><select id="bf_standard"><option value="">All</option>${standards.map(s => `<option value="${esc(s)}" ${s === bankFilters.standard ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  g3.appendChild(el(`<div class="field"><label>Exam Name</label><select id="bf_exam"><option value="">All Exams</option></select></div>`));
+  g3.appendChild(el(`<div class="field"><label>Year</label><select id="bf_year"><option value="">All Years</option></select></div>`));
+  filterCard.appendChild(g3);
+  wrap.appendChild(filterCard);
+
+  const resultsHost = el(`<div></div>`);
+  wrap.appendChild(resultsHost);
+
+  const standardSel = filterCard.querySelector("#bf_standard");
+  const examSel = filterCard.querySelector("#bf_exam");
+  const yearSel = filterCard.querySelector("#bf_year");
+
+  function examsInScope() {
+    return Object.keys(TEST_BANK).filter(e => !standardSel.value || TEST_BANK[e].standard === standardSel.value);
+  }
+  function fillExamOptions() {
+    const exams = examsInScope();
+    examSel.innerHTML = `<option value="">All Exams</option>` + exams.map(e => `<option value="${esc(e)}" ${e === bankFilters.exam ? "selected" : ""}>${esc(e)}</option>`).join("");
+    if (!exams.includes(bankFilters.exam)) bankFilters.exam = "";
+    fillYearOptions();
+  }
+  function fillYearOptions() {
+    const exam = examSel.value;
+    const years = exam && TEST_BANK[exam] ? Object.keys(TEST_BANK[exam].years).sort((a, b) => b - a) : [];
+    yearSel.innerHTML = `<option value="">All Years</option>` + years.map(y => `<option ${y === bankFilters.year ? "selected" : ""}>${y}</option>`).join("");
+    yearSel.disabled = !exam;
+  }
+
+  fillExamOptions();
+
+  standardSel.addEventListener("change", () => { bankFilters.standard = standardSel.value; bankFilters.exam = ""; bankFilters.year = ""; fillExamOptions(); renderBankResults(resultsHost); });
+  examSel.addEventListener("change", () => { bankFilters.exam = examSel.value; bankFilters.year = ""; fillYearOptions(); renderBankResults(resultsHost); });
+  yearSel.addEventListener("change", () => { bankFilters.year = yearSel.value; renderBankResults(resultsHost); });
+
+  renderBankResults(resultsHost);
+  return wrap;
+}
+
+function progressBarRow(label, completed, total, extra) {
+  const p = total ? Math.min(100, (completed / total) * 100) : 0;
+  const color = p >= 100 ? "var(--green)" : p >= 50 ? "var(--accent)" : "var(--yellow)";
+  const row = el(`<div class="progressrow">
+    <div class="toprow"><strong>${esc(label)}</strong><span class="count">${completed} / ${total}${extra ? " &middot; " + extra : ""}</span></div>
+    <div class="progressbar-outer"><div class="progressbar-inner" style="width:${p}%;background:${color};"></div></div>
+  </div>`);
+  return row;
+}
+
+function renderBankResults(host) {
+  host.innerHTML = "";
+  const f = bankFilters;
+  const exams = Object.keys(TEST_BANK).filter(e => !f.standard || TEST_BANK[e].standard === f.standard);
+
+  // ---- scope totals + insight ----
+  let scopeTotal = 0, scopeCompleted = 0;
+  const rows = []; // {label, completed, total, examKey, year}
+  if (f.exam && f.year) {
+    const bankYear = TEST_BANK[f.exam].years[f.year];
+    scopeTotal = bankYear.count;
+    scopeCompleted = pyqTestsInScope(f.exam, f.year).length;
+  } else if (f.exam) {
+    Object.keys(TEST_BANK[f.exam].years).forEach(y => {
+      const total = TEST_BANK[f.exam].years[y].count;
+      const completed = pyqTestsInScope(f.exam, y).length;
+      scopeTotal += total; scopeCompleted += completed;
+      rows.push({ label: y, completed, total, examKey: f.exam, year: y });
+    });
+    rows.sort((a, b) => b.year - a.year);
+  } else {
+    exams.forEach(e => {
+      let total = 0, completed = 0;
+      Object.keys(TEST_BANK[e].years).forEach(y => {
+        total += TEST_BANK[e].years[y].count;
+        completed += pyqTestsInScope(e, y).length;
+      });
+      scopeTotal += total; scopeCompleted += completed;
+      rows.push({ label: e, completed, total, examKey: e, year: null });
+    });
+    rows.sort((a, b) => (a.total ? a.completed / a.total : 0) - (b.total ? b.completed / b.total : 0));
+  }
+
+  // ---- insight box: recommendation + pace ----
+  let recommendation = "";
+  const remainingCombos = [];
+  exams.forEach(e => {
+    Object.keys(TEST_BANK[e].years).forEach(y => {
+      if (f.year && (e !== f.exam || y !== f.year)) return;
+      if (f.exam && e !== f.exam) return;
+      const total = TEST_BANK[e].years[y].count;
+      const completed = pyqTestsInScope(e, y).length;
+      if (completed < total) remainingCombos.push({ exam: e, year: y, remaining: total - completed });
+    });
+  });
+  remainingCombos.sort((a, b) => b.year - a.year || b.remaining - a.remaining);
+  if (remainingCombos.length) {
+    const r = remainingCombos[0];
+    recommendation = `Try <b>${esc(r.exam)} ${r.year}</b> next &mdash; ${r.remaining} paper${r.remaining > 1 ? "s" : ""} left.`;
+  } else if (scopeTotal > 0) {
+    recommendation = `All papers in this view are done. Great work!`;
+  }
+
+  const recentCutoff = new Date(); recentCutoff.setDate(recentCutoff.getDate() - 14);
+  const recentPyqCount = db.tests.filter(t => t.isPyq && new Date(t.date) >= recentCutoff).length;
+  const ratePerWeek = recentPyqCount / 2;
+  let paceMsg = "";
+  const remainingInScope = scopeTotal - scopeCompleted;
+  if (ratePerWeek > 0 && remainingInScope > 0) {
+    const weeks = Math.ceil(remainingInScope / ratePerWeek);
+    paceMsg = `At your recent pace (~${ratePerWeek.toFixed(1)}/week), you'd clear the remaining ${remainingInScope} in about ${weeks} week${weeks > 1 ? "s" : ""}.`;
+  }
+
+  const insight = el(`<div class="insightbox"></div>`);
+  insight.innerHTML = [recommendation, paceMsg].filter(Boolean).join("<br>") || "Start logging PYQ tests to see insights here.";
+  host.appendChild(insight);
+
+  // ---- overall scope progress bar ----
+  const card = el(`<div class="card"></div>`);
+  card.appendChild(progressBarRow(f.exam && f.year ? `${f.exam} — ${f.year}` : f.exam || "All Selected Exams", scopeCompleted, scopeTotal));
+  host.appendChild(card);
+
+  // ---- breakdown ----
+  if (f.exam && f.year) {
+    // shift-level breakdown
+    const shiftCard = el(`<div class="card"><h2>By Shift</h2></div>`);
+    SHIFTS.forEach(sh => {
+      const count = db.tests.filter(t => t.isPyq && t.pyqExamCategory === f.exam && String(t.pyqYear) === String(f.year) && t.pyqShift === sh).length;
+      shiftCard.appendChild(el(`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);"><span>${esc(sh)}</span><span>${count} attempt${count === 1 ? "" : "s"}</span></div>`));
+    });
+    host.appendChild(shiftCard);
+
+    const attempts = pyqTestsInScope(f.exam, f.year).sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (attempts.length) {
+      const listCard = el(`<div class="card"><h2>Attempts logged</h2></div>`);
+      const table = el(`<table><thead><tr><th>Date</th><th>Shift</th><th>Score</th></tr></thead><tbody></tbody></table>`);
+      attempts.forEach(t => {
+        const c = t.questions.filter(q => q.correctWrong === "Correct").length;
+        const w = t.questions.filter(q => q.correctWrong === "Wrong").length;
+        const score = +(c * (+t.marksCorrect) - w * (+t.marksNegative)).toFixed(2);
+        table.querySelector("tbody").appendChild(el(`<tr><td>${t.date}</td><td>${esc(t.pyqShift)}</td><td>${score}</td></tr>`));
+      });
+      listCard.appendChild(table);
+      host.appendChild(listCard);
+    }
+  } else if (rows.length) {
+    const card2 = el(`<div class="card"></div>`);
+    rows.forEach(r => card2.appendChild(progressBarRow(r.label, r.completed, r.total)));
+    host.appendChild(card2);
+  }
+}
+
 
 /* ============================== BOOT ============================== */
 if (getPasscode()) {

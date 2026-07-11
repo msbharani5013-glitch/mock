@@ -37,11 +37,20 @@ enter your passcode, and you're in.
 
 ## What's in this version
 - **Login** — simple passcode gate (set via `APP_PASSCODE`). Leave that variable blank/unset to disable it.
-- **Entry** — Test Information (name, platform, exam, test type, total questions, marks for a correct
-  answer, negative marks for a wrong answer, per-subject question counts with a live total check) → a
-  one-question-at-a-time wizard (Topic → Chapter → Right/Wrong → Reason → Remarks, numbered tabs to jump
-  between questions) → an instant result summary (score, accuracy, strong and weak topics, improvement
-  tips).
+- **Entry** — choose **PYQ** or **Manual** at the top:
+  - **PYQ**: pick Exam Name, Test Year, Date, Shift — question counts, subject split, and marking scheme
+    are pulled automatically from the built-in PYQ test bank (SSC CGL/CHSL/MTS/Selection Post/GD/Steno/CPO/
+    Delhi Police/JHT, year-wise). You only fill in Right/Wrong/Topic/Chapter/Reason/Remarks per question.
+  - **Manual**: the original flow — name, platform, exam, test type, total questions, marks, per-subject
+    question counts with a live total check.
+  - Either way: a one-question-at-a-time wizard → an instant result summary (score, accuracy, strong/weak
+    topics, improvement tips).
+- **Test Count** (new, on the dashboard) — tracks PYQ papers completed vs available:
+  - Filter by Standard (10th/12th/Degree), Exam Name, Year — fully reactive, no filter button.
+  - Progress bars at whatever level you've filtered to (all exams → per-exam, per-exam → per-year,
+    per-year → per-shift breakdown + a log of your attempts for that paper).
+  - A built-in insight box recommends what to attempt next (prioritising the most recent incomplete year)
+    and estimates how long the remaining papers will take at your recent pace.
 - **Progress** — one page, fully reactive (no Filter button — every dropdown updates results instantly):
   - Snapshot cards at the top (all tests, all time): total tests, questions, correct, wrong.
   - **Subject** filter (default "All Subjects") → shows every subject's accuracy, weakest or strongest
@@ -51,8 +60,16 @@ enter your passcode, and you're in.
   - Pick a specific **Chapter** → a focused view: totals, accuracy, and every remark you wrote for
     questions in that chapter.
 - Subjects, topics and chapters are the exact list you provided — pre-loaded, no editing screen (no
-  "Modify" page). If you ever want to change the hierarchy, it lives in the `HIERARCHY` object at the
-  top of `index.html` — editing it there and redeploying is the only way to change it now.
+  "Modify" page). The PYQ test bank (exam/year/question-count/marking scheme) is similarly pre-loaded.
+  Both live in `index.html` (`HIERARCHY` and `TEST_BANK` constants near the top) if you ever want to
+  edit them — editing there and redeploying is the only way to change them now.
+
+## This update's database change (safe — nothing of yours is touched)
+Five new columns were added to the `tests` table to track PYQ attempts: `is_pyq`, `pyq_exam_category`,
+`pyq_standard`, `pyq_year`, `pyq_shift`. They're added automatically the first time the updated server
+starts (via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, which Postgres only applies if the column isn't
+already there). Every test you've already logged keeps all its data exactly as is and simply gets
+`is_pyq = false` by default, since it wasn't a PYQ entry. No existing row is modified or deleted.
 
 ## Troubleshooting
 - **"Cannot GET /"**: check Render's Logs tab. If it says `index.html not found next to server.js`,
