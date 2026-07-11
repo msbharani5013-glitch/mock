@@ -389,6 +389,7 @@ function renderPyqEntryInfo(wrap, draft) {
       standardBadge.style.display = "none";
       yearSel.innerHTML = `<option value="">Select Year</option>`;
     }
+    fillSubjectOptions();
     updateInfoCard();
   }
 
@@ -403,7 +404,6 @@ function renderPyqEntryInfo(wrap, draft) {
   function updateInfoCard() {
     const exam = examSel.value, year = yearSel.value;
     const bankYear = exam && year && TEST_BANK[exam] ? TEST_BANK[exam].years[year] : null;
-    fillSubjectOptions();
     if (!bankYear) { infoCard.style.display = "none"; nextBtn.disabled = true; return; }
     infoCard.style.display = "";
     const total = bankYear.subjects.reduce((a, b) => a + b, 0);
@@ -433,7 +433,7 @@ function renderPyqEntryInfo(wrap, draft) {
   }
 
   examSel.addEventListener("change", fillYears);
-  yearSel.addEventListener("change", updateInfoCard);
+  yearSel.addEventListener("change", () => { fillSubjectOptions(); updateInfoCard(); });
   subjectSel.addEventListener("change", () => { updateInfoCard(); });
   card.querySelector("#p_shift").addEventListener("change", checkReady);
   card.querySelector("#p_date").addEventListener("change", checkReady);
