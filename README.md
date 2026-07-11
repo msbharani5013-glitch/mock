@@ -45,12 +45,17 @@ enter your passcode, and you're in.
     question counts with a live total check.
   - Either way: a one-question-at-a-time wizard → an instant result summary (score, accuracy, strong/weak
     topics, improvement tips).
-- **Test Count** (new, on the dashboard) — tracks PYQ papers completed vs available:
-  - Filter by Standard (10th/12th/Degree), Exam Name, Year — fully reactive, no filter button.
-  - Progress bars at whatever level you've filtered to (all exams → per-exam, per-exam → per-year,
-    per-year → per-shift breakdown + a log of your attempts for that paper).
-  - A built-in insight box recommends what to attempt next (prioritising the most recent incomplete year)
-    and estimates how long the remaining papers will take at your recent pace.
+- **Test Count** (new, on the dashboard) — tracks PYQ papers/questions completed vs available. Two modes,
+  switch anytime:
+  - **Track by Count**: filter by Standard/Exam/Year (reactive, no button). Progress bars at whatever
+    level you've filtered to — all exams → per-exam, per-exam → per-year, and for a specific exam+year a
+    log of your logged attempts (date, shift, score).
+  - **Track by Subjects**: a static summary at the top shows total PYQ questions available per subject
+    across the *entire* bank. Below it, filter by Standard/Exam/Year/Subject and see a progress bar per
+    subject (questions you've actually answered vs questions available) for whatever scope you've
+    selected — narrows to a single subject's bar if you pick one.
+  - Both modes include a built-in insight box: recommends what to attempt next (prioritising the most
+    recent incomplete year) and estimates how long the remainder will take at your recent pace.
 - **Progress** — one page, fully reactive (no Filter button — every dropdown updates results instantly):
   - Snapshot cards at the top (all tests, all time): total tests, questions, correct, wrong.
   - **Subject** filter (default "All Subjects") → shows every subject's accuracy, weakest or strongest

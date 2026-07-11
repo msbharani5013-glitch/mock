@@ -817,7 +817,9 @@ function renderProgressResults(host) {
 }
 
 /* ============================== TEST BANK (PYQ progress tracker) ============================== */
+let bankMode = "count"; // "count" | "subject"
 let bankFilters = { standard: "", exam: "", year: "" };
+let bankSubjectFilters = { standard: "", exam: "", year: "", subject: "" };
 
 function pyqTestsInScope(exam, year) {
   return db.tests.filter(t => t.isPyq && t.pyqExamCategory === exam && (year == null || String(t.pyqYear) === String(year)));
@@ -830,6 +832,30 @@ function pageTestBank() {
   wrap.appendChild(back);
   wrap.appendChild(el(`<h1>Test Count</h1><p class="lead">PYQ papers completed vs available. Updates instantly.</p>`));
 
+  const modeRow = el(`<div class="chip-toggle" style="margin-bottom:14px;">
+    <div class="chip ${bankMode === "count" ? "active" : ""}" id="bm_count">Track by Count</div>
+    <div class="chip ${bankMode === "subject" ? "active" : ""}" id="bm_subject">Track by Subjects</div>
+  </div>`);
+  modeRow.querySelector("#bm_count").onclick = () => { bankMode = "count"; go("test_bank"); };
+  modeRow.querySelector("#bm_subject").onclick = () => { bankMode = "subject"; go("test_bank"); };
+  wrap.appendChild(modeRow);
+
+  if (bankMode === "subject") return renderTrackBySubject(wrap);
+  return renderTrackByCount(wrap);
+}
+
+function progressBarRow(label, completed, total, extra) {
+  const p = total ? Math.min(100, (completed / total) * 100) : 0;
+  const color = p >= 100 ? "var(--green)" : p >= 50 ? "var(--accent)" : "var(--yellow)";
+  const row = el(`<div class="progressrow">
+    <div class="toprow"><strong>${esc(label)}</strong><span class="count">${completed} / ${total}${extra ? " &middot; " + extra : ""}</span></div>
+    <div class="progressbar-outer"><div class="progressbar-inner" style="width:${p}%;background:${color};"></div></div>
+  </div>`);
+  return row;
+}
+
+/* ---- Track by Count (existing view, minus the shift breakdown) ---- */
+function renderTrackByCount(wrap) {
   const standards = [...new Set(Object.values(TEST_BANK).map(e => e.standard))];
   const filterCard = el(`<div class="card"></div>`);
   const g3 = el(`<div class="grid3"></div>`);
@@ -870,16 +896,6 @@ function pageTestBank() {
 
   renderBankResults(resultsHost);
   return wrap;
-}
-
-function progressBarRow(label, completed, total, extra) {
-  const p = total ? Math.min(100, (completed / total) * 100) : 0;
-  const color = p >= 100 ? "var(--green)" : p >= 50 ? "var(--accent)" : "var(--yellow)";
-  const row = el(`<div class="progressrow">
-    <div class="toprow"><strong>${esc(label)}</strong><span class="count">${completed} / ${total}${extra ? " &middot; " + extra : ""}</span></div>
-    <div class="progressbar-outer"><div class="progressbar-inner" style="width:${p}%;background:${color};"></div></div>
-  </div>`);
-  return row;
 }
 
 function renderBankResults(host) {
@@ -956,14 +972,6 @@ function renderBankResults(host) {
 
   // ---- breakdown ----
   if (f.exam && f.year) {
-    // shift-level breakdown
-    const shiftCard = el(`<div class="card"><h2>By Shift</h2></div>`);
-    SHIFTS.forEach(sh => {
-      const count = db.tests.filter(t => t.isPyq && t.pyqExamCategory === f.exam && String(t.pyqYear) === String(f.year) && t.pyqShift === sh).length;
-      shiftCard.appendChild(el(`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);"><span>${esc(sh)}</span><span>${count} attempt${count === 1 ? "" : "s"}</span></div>`));
-    });
-    host.appendChild(shiftCard);
-
     const attempts = pyqTestsInScope(f.exam, f.year).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (attempts.length) {
       const listCard = el(`<div class="card"><h2>Attempts logged</h2></div>`);
@@ -981,6 +989,131 @@ function renderBankResults(host) {
     const card2 = el(`<div class="card"></div>`);
     rows.forEach(r => card2.appendChild(progressBarRow(r.label, r.completed, r.total)));
     host.appendChild(card2);
+  }
+}
+
+/* ---- Track by Subject (new) ---- */
+function bankSubjectTotals(examsInScope, year) {
+  const totals = [0, 0, 0, 0];
+  examsInScope.forEach(e => {
+    const years = year ? [year] : Object.keys(TEST_BANK[e].years);
+    years.forEach(y => {
+      const by = TEST_BANK[e].years[y];
+      if (!by) return;
+      by.subjects.forEach((c, i) => { totals[i] += c * by.count; });
+    });
+  });
+  return totals;
+}
+
+function completedSubjectTotals(examsInScope, year) {
+  const totals = [0, 0, 0, 0];
+  db.tests.forEach(t => {
+    if (!t.isPyq || !examsInScope.includes(t.pyqExamCategory)) return;
+    if (year && String(t.pyqYear) !== String(year)) return;
+    t.questions.forEach(q => {
+      const idx = SUBJECTS.indexOf(q.subject);
+      if (idx >= 0) totals[idx]++;
+    });
+  });
+  return totals;
+}
+
+function renderTrackBySubject(wrap) {
+  // ---- static, unfiltered totals across the whole bank ----
+  const allExams = Object.keys(TEST_BANK);
+  const grandTotals = bankSubjectTotals(allExams, null);
+  const staticCard = el(`<div class="card"><label>Total PYQ Questions in the Bank (all exams, all years)</label></div>`);
+  const staticGrid = el(`<div class="grid3" style="margin-top:8px;"></div>`);
+  SUBJECTS.forEach((s, i) => {
+    staticGrid.appendChild(el(`<div class="statcard"><div class="n">${grandTotals[i]}</div><div class="l">${esc(s)}</div></div>`));
+  });
+  staticCard.appendChild(staticGrid);
+  wrap.appendChild(staticCard);
+
+  // ---- filters ----
+  const standards = [...new Set(Object.values(TEST_BANK).map(e => e.standard))];
+  const filterCard = el(`<div class="card"></div>`);
+  const g3a = el(`<div class="grid3"></div>`);
+  g3a.appendChild(el(`<div class="field"><label>Standard</label><select id="sf_standard"><option value="">All</option>${standards.map(s => `<option value="${esc(s)}" ${s === bankSubjectFilters.standard ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  g3a.appendChild(el(`<div class="field"><label>Exam</label><select id="sf_exam"><option value="">All Exams</option></select></div>`));
+  g3a.appendChild(el(`<div class="field"><label>Year</label><select id="sf_year"><option value="">All Years</option></select></div>`));
+  filterCard.appendChild(g3a);
+  filterCard.appendChild(el(`<div class="field"><label>Subject</label><select id="sf_subject"><option value="">All Subjects</option>${SUBJECTS.map(s => `<option value="${esc(s)}" ${s === bankSubjectFilters.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>`));
+  wrap.appendChild(filterCard);
+
+  const resultsHost = el(`<div></div>`);
+  wrap.appendChild(resultsHost);
+
+  const standardSel = filterCard.querySelector("#sf_standard");
+  const examSel = filterCard.querySelector("#sf_exam");
+  const yearSel = filterCard.querySelector("#sf_year");
+  const subjectSel = filterCard.querySelector("#sf_subject");
+
+  function examsInScope() {
+    return Object.keys(TEST_BANK).filter(e => !standardSel.value || TEST_BANK[e].standard === standardSel.value);
+  }
+  function fillExamOptions() {
+    const exams = examsInScope();
+    examSel.innerHTML = `<option value="">All Exams</option>` + exams.map(e => `<option value="${esc(e)}" ${e === bankSubjectFilters.exam ? "selected" : ""}>${esc(e)}</option>`).join("");
+    if (!exams.includes(bankSubjectFilters.exam)) bankSubjectFilters.exam = "";
+    fillYearOptions();
+  }
+  function fillYearOptions() {
+    const exam = examSel.value;
+    const years = exam && TEST_BANK[exam] ? Object.keys(TEST_BANK[exam].years).sort((a, b) => b - a) : [];
+    yearSel.innerHTML = `<option value="">All Years</option>` + years.map(y => `<option ${y === bankSubjectFilters.year ? "selected" : ""}>${y}</option>`).join("");
+    yearSel.disabled = !exam;
+  }
+  fillExamOptions();
+
+  function apply() {
+    bankSubjectFilters.standard = standardSel.value;
+    bankSubjectFilters.exam = examSel.value;
+    bankSubjectFilters.year = yearSel.value;
+    bankSubjectFilters.subject = subjectSel.value;
+    renderSubjectScopeResults(resultsHost);
+  }
+  standardSel.addEventListener("change", () => { bankSubjectFilters.exam = ""; bankSubjectFilters.year = ""; fillExamOptions(); apply(); });
+  examSel.addEventListener("change", () => { bankSubjectFilters.year = ""; fillYearOptions(); apply(); });
+  yearSel.addEventListener("change", apply);
+  subjectSel.addEventListener("change", apply);
+
+  renderSubjectScopeResults(resultsHost);
+  return wrap;
+}
+
+function renderSubjectScopeResults(host) {
+  host.innerHTML = "";
+  const f = bankSubjectFilters;
+  const examsInScope = Object.keys(TEST_BANK).filter(e =>
+    (!f.standard || TEST_BANK[e].standard === f.standard) && (!f.exam || e === f.exam));
+
+  if (!examsInScope.length) { host.appendChild(el(`<div class="empty">No exams match this filter.</div>`)); return; }
+
+  const totals = bankSubjectTotals(examsInScope, f.year || null);
+  const completed = completedSubjectTotals(examsInScope, f.year || null);
+
+  const card = el(`<div class="card"></div>`);
+  const subjectsToShow = f.subject ? [f.subject] : SUBJECTS;
+  subjectsToShow.forEach(s => {
+    const i = SUBJECTS.indexOf(s);
+    card.appendChild(progressBarRow(s, completed[i], totals[i]));
+  });
+  host.appendChild(card);
+
+  const grandTotal = totals.reduce((a, b) => a + b, 0);
+  const grandCompleted = completed.reduce((a, b) => a + b, 0);
+  if (!f.subject && grandTotal > 0) {
+    const summary = el(`<div class="insightbox"></div>`);
+    const weakestIdx = SUBJECTS.map((s, i) => ({ s, i, total: totals[i], pct: totals[i] ? completed[i] / totals[i] : 1 }))
+      .filter(x => x.total > 0).sort((a, b) => a.pct - b.pct)[0];
+    let msg = `Overall: <b>${grandCompleted} / ${grandTotal}</b> questions practiced in this scope.`;
+    if (weakestIdx && weakestIdx.pct < 1) {
+      msg += `<br>Least practiced subject here: <b>${esc(weakestIdx.s)}</b> (${Math.round(weakestIdx.pct * 100)}% covered).`;
+    }
+    summary.innerHTML = msg;
+    host.insertBefore(summary, host.firstChild);
   }
 }
 
