@@ -356,6 +356,17 @@ function renderPyqEntryInfo(wrap, draft) {
   card.appendChild(g2);
 
   card.appendChild(el(`<div class="field"><label>Date</label><input type="date" id="p_date" value="${draft.date}"></div>`));
+
+  const pyqModeRow = el(`<div class="field"><label>Test Coverage</label>
+    <div class="chip-toggle">
+      <div class="chip active" id="p_mode_full">Full Test</div>
+      <div class="chip" id="p_mode_subject">Subject Test</div>
+    </div></div>`);
+  card.appendChild(pyqModeRow);
+
+  const subjectPickWrap = el(`<div class="field" id="p_subject_wrap" style="display:none;"><label>Subject</label><select id="p_subject"></select></div>`);
+  card.appendChild(subjectPickWrap);
+
   wrap.appendChild(card);
 
   const infoCard = el(`<div class="card" id="p_info" style="display:none;"><label>Auto-filled from Test Bank</label></div>`);
@@ -363,6 +374,8 @@ function renderPyqEntryInfo(wrap, draft) {
 
   const examSel = card.querySelector("#p_exam");
   const yearSel = card.querySelector("#p_year");
+  const subjectSel = subjectPickWrap.querySelector("#p_subject");
+  let pyqMode = "full"; // "full" | "subject"
 
   function fillYears() {
     const exam = examSel.value;
@@ -379,15 +392,31 @@ function renderPyqEntryInfo(wrap, draft) {
     updateInfoCard();
   }
 
+  function fillSubjectOptions() {
+    const exam = examSel.value, year = yearSel.value;
+    const bankYear = exam && year && TEST_BANK[exam] ? TEST_BANK[exam].years[year] : null;
+    if (!bankYear) { subjectSel.innerHTML = ""; return; }
+    const available = SUBJECTS.filter((s, i) => bankYear.subjects[i] > 0);
+    subjectSel.innerHTML = available.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  }
+
   function updateInfoCard() {
     const exam = examSel.value, year = yearSel.value;
     const bankYear = exam && year && TEST_BANK[exam] ? TEST_BANK[exam].years[year] : null;
+    fillSubjectOptions();
     if (!bankYear) { infoCard.style.display = "none"; nextBtn.disabled = true; return; }
     infoCard.style.display = "";
     const total = bankYear.subjects.reduce((a, b) => a + b, 0);
+    let questionInfo;
+    if (pyqMode === "subject" && subjectSel.value) {
+      const idx = SUBJECTS.indexOf(subjectSel.value);
+      questionInfo = `<div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Questions (${esc(subjectSel.value)} only)</span><strong>${bankYear.subjects[idx]}</strong></div>`;
+    } else {
+      questionInfo = `<div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Total Questions</span><strong>${total}</strong></div>`;
+    }
     infoCard.innerHTML = `<label>Auto-filled from Test Bank</label>
       <div class="grid3" style="margin-top:6px;">
-        <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Total Questions</span><strong>${total}</strong></div>
+        ${questionInfo}
         <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Marks</span><strong>+${bankYear.marksCorrect} / -${bankYear.marksNegative}</strong></div>
         <div><span class="section-tag" style="display:block;color:var(--muted);font-size:.72rem;">Papers this year</span><strong>${bankYear.count}</strong></div>
       </div>
@@ -398,14 +427,32 @@ function renderPyqEntryInfo(wrap, draft) {
   }
 
   function checkReady() {
-    const ready = examSel.value && yearSel.value && card.querySelector("#p_shift").value && card.querySelector("#p_date").value;
+    let ready = examSel.value && yearSel.value && card.querySelector("#p_shift").value && card.querySelector("#p_date").value;
+    if (pyqMode === "subject") ready = ready && subjectSel.value;
     nextBtn.disabled = !ready;
   }
 
   examSel.addEventListener("change", fillYears);
   yearSel.addEventListener("change", updateInfoCard);
+  subjectSel.addEventListener("change", () => { updateInfoCard(); });
   card.querySelector("#p_shift").addEventListener("change", checkReady);
   card.querySelector("#p_date").addEventListener("change", checkReady);
+
+  pyqModeRow.querySelector("#p_mode_full").onclick = () => {
+    pyqMode = "full";
+    pyqModeRow.querySelector("#p_mode_full").classList.add("active");
+    pyqModeRow.querySelector("#p_mode_subject").classList.remove("active");
+    subjectPickWrap.style.display = "none";
+    updateInfoCard();
+  };
+  pyqModeRow.querySelector("#p_mode_subject").onclick = () => {
+    pyqMode = "subject";
+    pyqModeRow.querySelector("#p_mode_subject").classList.add("active");
+    pyqModeRow.querySelector("#p_mode_full").classList.remove("active");
+    subjectPickWrap.style.display = "";
+    fillSubjectOptions();
+    updateInfoCard();
+  };
 
   const btnrow = el(`<div class="btnrow"><button id="next" disabled>Next: Enter Analysis &rarr;</button></div>`);
   const nextBtn = btnrow.querySelector("#next");
@@ -420,19 +467,34 @@ function renderPyqEntryInfo(wrap, draft) {
     draft.isPyq = true;
     draft.pyqExamCategory = exam; draft.pyqStandard = standard; draft.pyqYear = parseInt(year, 10); draft.pyqShift = shift;
     draft.date = date;
-    draft.testName = `${exam} — ${year} — ${shift}`;
-    draft.platform = ""; draft.exam = exam; draft.testType = "PYQ";
     draft.marksCorrect = bankYear.marksCorrect; draft.marksNegative = bankYear.marksNegative;
-    draft.totalQuestions = bankYear.subjects.reduce((a, b) => a + b, 0);
+    draft.platform = ""; draft.exam = exam; draft.testType = "PYQ";
 
     const questions = [];
     let qn = 1;
-    SUBJECTS.forEach((subj, i) => {
-      const count = bankYear.subjects[i] || 0;
+    if (pyqMode === "subject") {
+      const chosenSubject = subjectSel.value;
+      const idx = SUBJECTS.indexOf(chosenSubject);
+      const count = bankYear.subjects[idx] || 0;
       for (let k = 0; k < count; k++) {
-        questions.push({ qNumber: qn++, subject: subj, topic: "", chapter: "", correctWrong: "", reason: "", remarks: "" });
+        questions.push({ qNumber: qn++, subject: chosenSubject, topic: "", chapter: "", correctWrong: "", reason: "", remarks: "" });
       }
-    });
+      draft.pyqMode = "subject";
+      draft.pyqSubject = chosenSubject;
+      draft.testName = `${exam} — ${year} — ${shift} — ${chosenSubject} Only`;
+      draft.totalQuestions = count;
+    } else {
+      SUBJECTS.forEach((subj, i) => {
+        const count = bankYear.subjects[i] || 0;
+        for (let k = 0; k < count; k++) {
+          questions.push({ qNumber: qn++, subject: subj, topic: "", chapter: "", correctWrong: "", reason: "", remarks: "" });
+        }
+      });
+      draft.pyqMode = "full";
+      draft.pyqSubject = "";
+      draft.testName = `${exam} — ${year} — ${shift}`;
+      draft.totalQuestions = bankYear.subjects.reduce((a, b) => a + b, 0);
+    }
     draft.questions = questions;
     draft.currentIndex = 0;
     go("entry_questions");
@@ -520,7 +582,8 @@ function pageEntryQuestions() {
           testType: draft.testType, totalQuestions: draft.totalQuestions,
           marksCorrect: draft.marksCorrect, marksNegative: draft.marksNegative, questions: draft.questions,
           isPyq: !!draft.isPyq, pyqExamCategory: draft.pyqExamCategory || "", pyqStandard: draft.pyqStandard || "",
-          pyqYear: draft.pyqYear || null, pyqShift: draft.pyqShift || ""
+          pyqYear: draft.pyqYear || null, pyqShift: draft.pyqShift || "",
+          pyqMode: draft.pyqMode || "full", pyqSubject: draft.pyqSubject || ""
         };
         await apiPost("/api/tests", payload);
         await loadData();
@@ -555,7 +618,8 @@ function pageEntryResult() {
   wrap.appendChild(el(`<div style="text-align:center;margin-bottom:10px;"><span style="font-size:1.6rem;">&#9989;</span></div>`));
   wrap.appendChild(el(`<h1 style="text-align:center;">Test Submitted Successfully!</h1><p class="lead" style="text-align:center;">Here is your analysis summary</p>`));
   if (t.isPyq) {
-    wrap.appendChild(el(`<p style="text-align:center;margin-top:-10px;"><span class="pill-badge average">PYQ &middot; ${esc(t.pyqExamCategory)} &middot; ${esc(String(t.pyqYear))} &middot; ${esc(t.pyqShift)}</span></p>`));
+    const coverageLabel = t.pyqMode === "subject" ? esc(t.pyqSubject) + " Only" : "Full Test";
+    wrap.appendChild(el(`<p style="text-align:center;margin-top:-10px;"><span class="pill-badge average">PYQ &middot; ${esc(t.pyqExamCategory)} &middot; ${esc(String(t.pyqYear))} &middot; ${esc(t.pyqShift)} &middot; ${coverageLabel}</span></p>`));
   }
 
   const stats = el(`<div class="statgrid four"></div>`);
@@ -821,8 +885,9 @@ let bankMode = "count"; // "count" | "subject"
 let bankFilters = { standard: "", exam: "", year: "" };
 let bankSubjectFilters = { standard: "", exam: "", year: "", subject: "" };
 
-function pyqTestsInScope(exam, year) {
-  return db.tests.filter(t => t.isPyq && t.pyqExamCategory === exam && (year == null || String(t.pyqYear) === String(year)));
+function pyqTestsInScope(exam, year, fullOnly) {
+  return db.tests.filter(t => t.isPyq && t.pyqExamCategory === exam && (year == null || String(t.pyqYear) === String(year))
+    && (!fullOnly || t.pyqMode !== "subject"));
 }
 
 function pageTestBank() {
@@ -903,17 +968,17 @@ function renderBankResults(host) {
   const f = bankFilters;
   const exams = Object.keys(TEST_BANK).filter(e => !f.standard || TEST_BANK[e].standard === f.standard);
 
-  // ---- scope totals + insight ----
+  // ---- scope totals + insight (papers only — "Subject Test" PYQ attempts don't count as a full paper) ----
   let scopeTotal = 0, scopeCompleted = 0;
   const rows = []; // {label, completed, total, examKey, year}
   if (f.exam && f.year) {
     const bankYear = TEST_BANK[f.exam].years[f.year];
     scopeTotal = bankYear.count;
-    scopeCompleted = pyqTestsInScope(f.exam, f.year).length;
+    scopeCompleted = pyqTestsInScope(f.exam, f.year, true).length;
   } else if (f.exam) {
     Object.keys(TEST_BANK[f.exam].years).forEach(y => {
       const total = TEST_BANK[f.exam].years[y].count;
-      const completed = pyqTestsInScope(f.exam, y).length;
+      const completed = pyqTestsInScope(f.exam, y, true).length;
       scopeTotal += total; scopeCompleted += completed;
       rows.push({ label: y, completed, total, examKey: f.exam, year: y });
     });
@@ -923,7 +988,7 @@ function renderBankResults(host) {
       let total = 0, completed = 0;
       Object.keys(TEST_BANK[e].years).forEach(y => {
         total += TEST_BANK[e].years[y].count;
-        completed += pyqTestsInScope(e, y).length;
+        completed += pyqTestsInScope(e, y, true).length;
       });
       scopeTotal += total; scopeCompleted += completed;
       rows.push({ label: e, completed, total, examKey: e, year: null });
@@ -939,7 +1004,7 @@ function renderBankResults(host) {
       if (f.year && (e !== f.exam || y !== f.year)) return;
       if (f.exam && e !== f.exam) return;
       const total = TEST_BANK[e].years[y].count;
-      const completed = pyqTestsInScope(e, y).length;
+      const completed = pyqTestsInScope(e, y, true).length;
       if (completed < total) remainingCombos.push({ exam: e, year: y, remaining: total - completed });
     });
   });
@@ -952,7 +1017,7 @@ function renderBankResults(host) {
   }
 
   const recentCutoff = new Date(); recentCutoff.setDate(recentCutoff.getDate() - 14);
-  const recentPyqCount = db.tests.filter(t => t.isPyq && new Date(t.date) >= recentCutoff).length;
+  const recentPyqCount = db.tests.filter(t => t.isPyq && t.pyqMode !== "subject" && new Date(t.date) >= recentCutoff).length;
   const ratePerWeek = recentPyqCount / 2;
   let paceMsg = "";
   const remainingInScope = scopeTotal - scopeCompleted;
@@ -967,20 +1032,21 @@ function renderBankResults(host) {
 
   // ---- overall scope progress bar ----
   const card = el(`<div class="card"></div>`);
-  card.appendChild(progressBarRow(f.exam && f.year ? `${f.exam} — ${f.year}` : f.exam || "All Selected Exams", scopeCompleted, scopeTotal));
+  card.appendChild(progressBarRow(f.exam && f.year ? `${f.exam} — ${f.year}` : f.exam || "All Selected Exams", scopeCompleted, scopeTotal, "full papers"));
   host.appendChild(card);
 
   // ---- breakdown ----
   if (f.exam && f.year) {
-    const attempts = pyqTestsInScope(f.exam, f.year).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const attempts = pyqTestsInScope(f.exam, f.year, false).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (attempts.length) {
       const listCard = el(`<div class="card"><h2>Attempts logged</h2></div>`);
-      const table = el(`<table><thead><tr><th>Date</th><th>Shift</th><th>Score</th></tr></thead><tbody></tbody></table>`);
+      const table = el(`<table><thead><tr><th>Date</th><th>Shift</th><th>Coverage</th><th>Score</th></tr></thead><tbody></tbody></table>`);
       attempts.forEach(t => {
         const c = t.questions.filter(q => q.correctWrong === "Correct").length;
         const w = t.questions.filter(q => q.correctWrong === "Wrong").length;
         const score = +(c * (+t.marksCorrect) - w * (+t.marksNegative)).toFixed(2);
-        table.querySelector("tbody").appendChild(el(`<tr><td>${t.date}</td><td>${esc(t.pyqShift)}</td><td>${score}</td></tr>`));
+        const coverage = t.pyqMode === "subject" ? esc(t.pyqSubject) + " only" : "Full test";
+        table.querySelector("tbody").appendChild(el(`<tr><td>${t.date}</td><td>${esc(t.pyqShift)}</td><td>${coverage}</td><td>${score}</td></tr>`));
       });
       listCard.appendChild(table);
       host.appendChild(listCard);

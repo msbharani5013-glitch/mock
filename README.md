@@ -38,9 +38,13 @@ enter your passcode, and you're in.
 ## What's in this version
 - **Login** — simple passcode gate (set via `APP_PASSCODE`). Leave that variable blank/unset to disable it.
 - **Entry** — choose **PYQ** or **Manual** at the top:
-  - **PYQ**: pick Exam Name, Test Year, Date, Shift — question counts, subject split, and marking scheme
-    are pulled automatically from the built-in PYQ test bank (SSC CGL/CHSL/MTS/Selection Post/GD/Steno/CPO/
-    Delhi Police/JHT, year-wise). You only fill in Right/Wrong/Topic/Chapter/Reason/Remarks per question.
+  - **PYQ**: pick Exam Name, Test Year, Date, Shift, then **Full Test** or **Subject Test**:
+    - *Full Test*: all 4 subjects, counts as one completed paper.
+    - *Subject Test*: pick one subject (e.g. just English) — question count and marks for that section
+      auto-fill from the bank. Doesn't count toward "papers completed" in Track by Count (it's a section,
+      not a full paper), but still counts toward Track by Subjects' question tallies.
+    - Either way, question counts, subject split, and marking scheme are pulled automatically from the
+      built-in PYQ test bank. You only fill in Right/Wrong/Topic/Chapter/Reason/Remarks per question.
   - **Manual**: the original flow — name, platform, exam, test type, total questions, marks, per-subject
     question counts with a live total check.
   - Either way: a one-question-at-a-time wizard → an instant result summary (score, accuracy, strong/weak
@@ -70,11 +74,11 @@ enter your passcode, and you're in.
   edit them — editing there and redeploying is the only way to change them now.
 
 ## This update's database change (safe — nothing of yours is touched)
-Five new columns were added to the `tests` table to track PYQ attempts: `is_pyq`, `pyq_exam_category`,
-`pyq_standard`, `pyq_year`, `pyq_shift`. They're added automatically the first time the updated server
-starts (via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, which Postgres only applies if the column isn't
-already there). Every test you've already logged keeps all its data exactly as is and simply gets
-`is_pyq = false` by default, since it wasn't a PYQ entry. No existing row is modified or deleted.
+Two more columns were added to the `tests` table: `pyq_mode` (`'full'` or `'subject'`) and `pyq_subject`.
+Same as before, they're added automatically via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` the first time
+the updated server starts. Every test you've already logged — PYQ or manual — keeps all its data exactly
+as is and gets `pyq_mode = 'full'` by default (correct, since Subject Test mode didn't exist before this
+update). No existing row is modified or deleted.
 
 ## Troubleshooting
 - **"Cannot GET /"**: check Render's Logs tab. If it says `index.html not found next to server.js`,

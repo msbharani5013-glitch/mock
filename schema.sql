@@ -17,6 +17,8 @@ ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_exam_category TEXT;
 ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_standard TEXT;
 ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_year INT;
 ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_shift TEXT;
+ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_mode TEXT NOT NULL DEFAULT 'full';
+ALTER TABLE tests ADD COLUMN IF NOT EXISTS pyq_subject TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_tests_pyq ON tests(is_pyq, pyq_exam_category, pyq_year);
 
