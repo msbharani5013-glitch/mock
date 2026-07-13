@@ -204,10 +204,12 @@ function pageDashboard() {
       <div><h3>Weightage by PYQ</h3><p>See topic &amp; chapter weightage from your PYQ history</p></div>
     </button>`);
   weightTile.onclick = () => go("weightage");
-  wrap.appendChild(entryTile);
-  wrap.appendChild(progTile);
-  wrap.appendChild(bankTile);
-  wrap.appendChild(weightTile);
+  const grid = el(`<div class="tilegrid"></div>`);
+  grid.appendChild(entryTile);
+  grid.appendChild(progTile);
+  grid.appendChild(bankTile);
+  grid.appendChild(weightTile);
+  wrap.appendChild(grid);
 
   if (db.tests.length) {
     const recent = [...db.tests].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
@@ -1261,7 +1263,7 @@ function computeWeightageRows(records) {
   }));
 }
 
-let weightagePanels = [{ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" }];
+let weightagePanels = [{ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage", openFilter: null }];
 let weightageCompareMode = false;
 
 function pageWeightage() {
@@ -1285,14 +1287,14 @@ function pageWeightage() {
       weightagePanels = [weightagePanels[0]];
     } else {
       weightageCompareMode = true;
-      if (weightagePanels.length < 2) weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" });
+      if (weightagePanels.length < 2) weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage", openFilter: null });
     }
     go("weightage");
   };
   topBtnRow.appendChild(compareBtn);
   if (weightageCompareMode && weightagePanels.length < 4) {
     const addBtn = el(`<button class="secondary">+ Add panel</button>`);
-    addBtn.onclick = () => { weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" }); go("weightage"); };
+    addBtn.onclick = () => { weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage", openFilter: null }); go("weightage"); };
     topBtnRow.appendChild(addBtn);
   }
   wrap.appendChild(topBtnRow);
@@ -1323,32 +1325,45 @@ function pageWeightage() {
 }
 
 function renderWeightagePanel(host, panelState, allRecords, compact, panelIdx) {
-  const filterWrap = el(`<div class="${compact ? "" : "card"}"></div>`);
+  const filterRow = el(`<div class="multiselect-row"></div>`);
   WEIGHT_KEYS.forEach(key => {
     const options = weightageOptionsFor(allRecords, panelState.filters, key);
-    const group = el(`<div class="filtergroup">
-      <div class="fg-label"><label>${WEIGHT_LABELS[key]}</label>${panelState.filters[key].size ? `<button class="clearlink">Clear</button>` : ""}</div>
-      <div class="chip-toggle" id="wf_${key}"></div>
-    </div>`);
-    const chipRow = group.querySelector(`#wf_${key}`);
-    if (!options.length) {
-      chipRow.appendChild(el(`<span style="color:var(--muted);font-size:.8rem;">No data</span>`));
+    const selected = panelState.filters[key];
+    const isOpen = panelState.openFilter === key;
+
+    let btnLabel;
+    if (selected.size === 0) btnLabel = `${WEIGHT_LABELS[key]}: All`;
+    else if (selected.size <= 2) btnLabel = `${WEIGHT_LABELS[key]}: ${[...selected].join(", ")}`;
+    else btnLabel = `${WEIGHT_LABELS[key]}: ${selected.size} selected`;
+
+    const ms = el(`<div class="multiselect"></div>`);
+    const btn = el(`<button type="button" class="multiselect-btn ${selected.size ? "hasvalue" : ""}"><span>${esc(btnLabel)}</span><span class="caret">&#9662;</span></button>`);
+    btn.onclick = () => { panelState.openFilter = isOpen ? null : key; go("weightage"); };
+    ms.appendChild(btn);
+
+    if (isOpen) {
+      const panel = el(`<div class="multiselect-panel"></div>`);
+      if (selected.size) {
+        const clearBtn = el(`<button type="button" class="msp-clear">Clear ${esc(WEIGHT_LABELS[key])}</button>`);
+        clearBtn.onclick = () => { selected.clear(); go("weightage"); };
+        panel.appendChild(clearBtn);
+      }
+      if (!options.length) {
+        panel.appendChild(el(`<div class="multiselect-empty">No data</div>`));
+      }
+      options.forEach(opt => {
+        const optEl = el(`<label class="msp-option"><input type="checkbox" ${selected.has(opt) ? "checked" : ""}><span>${esc(opt)}</span></label>`);
+        optEl.querySelector("input").addEventListener("change", () => {
+          if (selected.has(opt)) selected.delete(opt); else selected.add(opt);
+          go("weightage");
+        });
+        panel.appendChild(optEl);
+      });
+      ms.appendChild(panel);
     }
-    options.forEach(opt => {
-      const active = panelState.filters[key].has(opt);
-      const chip = el(`<div class="chip ${compact ? "small" : ""} ${active ? "active" : ""}">${esc(opt)}</div>`);
-      chip.onclick = () => {
-        if (panelState.filters[key].has(opt)) panelState.filters[key].delete(opt);
-        else panelState.filters[key].add(opt);
-        go(weightageCompareMode ? "weightage" : "weightage");
-      };
-      chipRow.appendChild(chip);
-    });
-    const clearBtn = group.querySelector(".clearlink");
-    if (clearBtn) clearBtn.onclick = () => { panelState.filters[key].clear(); go("weightage"); };
-    filterWrap.appendChild(group);
+    filterRow.appendChild(ms);
   });
-  host.appendChild(filterWrap);
+  host.appendChild(filterRow);
 
   const records = weightageFilteredRecords(allRecords, panelState.filters);
   const actionRow = el(`<div class="btnrow" style="margin:10px 0;"></div>`);
