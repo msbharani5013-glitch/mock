@@ -60,6 +60,18 @@ enter your passcode, and you're in.
     selected — narrows to a single subject's bar if you pick one.
   - Both modes include a built-in insight box: recommends what to attempt next (prioritising the most
     recent incomplete year) and estimates how long the remainder will take at your recent pace.
+- **Weightage by PYQ** (new, on the dashboard) — built entirely from Topic/Chapter/Right-Wrong you've
+  logged on PYQ entries (Full Test or Subject Test, either counts):
+  - Filters for Exam, Year, Subject, Topic, Chapter, Date, Shift — each shows only values that actually
+    appear in your PYQ history, and each is **multi-select** (tap a chip to add/remove it) and **faceted**:
+    picking a value in one filter narrows what's available in every other filter, live, no button needed.
+  - Default view: chapters ranked by weightage (how many questions from that chapter appeared in your
+    filtered scope), with a progress bar per chapter.
+  - **Evaluate** button: adds your accuracy and a Strong/Average/Weak badge per chapter, plus a sort
+    control (Most Asked / Weak to Strong / Strong to Weak) — so you can see which frequently-asked
+    chapters you're actually weak on.
+  - **COMPARE** button: splits into 2 independent panels (up to 4), each with its own filters and its own
+    Evaluate toggle, so you can put e.g. CGL vs CHSL, or 2024 vs 2025, side by side.
 - **Progress** — one page, fully reactive (no Filter button — every dropdown updates results instantly):
   - Snapshot cards at the top (all tests, all time): total tests, questions, correct, wrong.
   - **Subject** filter (default "All Subjects") → shows every subject's accuracy, weakest or strongest

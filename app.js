@@ -122,6 +122,7 @@ function render() {
     entry_result: pageEntryResult,
     progress: pageProgress,
     test_bank: pageTestBank,
+    weightage: pageWeightage,
   };
   const fn = pages[route.page] || pageDashboard;
   try {
@@ -197,9 +198,16 @@ function pageDashboard() {
       <div><h3>Test Count</h3><p>Track PYQ papers completed vs available</p></div>
     </button>`);
   bankTile.onclick = () => go("test_bank");
+  const weightTile = el(`
+    <button class="tile" style="border-color:var(--line);">
+      <div class="icon" style="background:#F1E9FB;">&#128202;</div>
+      <div><h3>Weightage by PYQ</h3><p>See topic &amp; chapter weightage from your PYQ history</p></div>
+    </button>`);
+  weightTile.onclick = () => go("weightage");
   wrap.appendChild(entryTile);
   wrap.appendChild(progTile);
   wrap.appendChild(bankTile);
+  wrap.appendChild(weightTile);
 
   if (db.tests.length) {
     const recent = [...db.tests].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
@@ -1181,6 +1189,212 @@ function renderSubjectScopeResults(host) {
     summary.innerHTML = msg;
     host.insertBefore(summary, host.firstChild);
   }
+}
+
+
+/* ============================== WEIGHTAGE BY PYQ ============================== */
+const WEIGHT_KEYS = ["exam", "year", "subject", "topic", "chapter", "date", "shift"];
+const WEIGHT_LABELS = { exam: "Exam", year: "Year", subject: "Subject", topic: "Topic", chapter: "Chapter", date: "Date", shift: "Shift" };
+
+function flatPyqQuestions() {
+  const out = [];
+  db.tests.forEach(t => {
+    if (!t.isPyq) return;
+    t.questions.forEach(q => {
+      if (!q.correctWrong) return;
+      out.push({
+        exam: t.pyqExamCategory || "", year: t.pyqYear != null ? String(t.pyqYear) : "", shift: t.pyqShift || "",
+        date: t.date, subject: q.subject || "", topic: q.topic || "", chapter: q.chapter || "",
+        correctWrong: q.correctWrong
+      });
+    });
+  });
+  return out;
+}
+
+function emptyWeightageFilters() {
+  const f = {};
+  WEIGHT_KEYS.forEach(k => { f[k] = new Set(); });
+  return f;
+}
+function cloneWeightageFilters(f) {
+  const c = {};
+  WEIGHT_KEYS.forEach(k => { c[k] = new Set(f[k]); });
+  return c;
+}
+function matchesWeightageFilters(record, filters, excludeKey) {
+  for (const key of WEIGHT_KEYS) {
+    if (key === excludeKey) continue;
+    const set = filters[key];
+    if (!set || set.size === 0) continue;
+    if (!set.has(String(record[key]))) return false;
+  }
+  return true;
+}
+function weightageOptionsFor(allRecords, filters, key) {
+  const pool = allRecords.filter(r => matchesWeightageFilters(r, filters, key) && r[key]);
+  const vals = [...new Set(pool.map(r => String(r[key])))];
+  if (key === "year") vals.sort((a, b) => b - a);
+  else vals.sort();
+  return vals;
+}
+function weightageFilteredRecords(allRecords, filters) {
+  return allRecords.filter(r => matchesWeightageFilters(r, filters, null));
+}
+
+function computeWeightageRows(records) {
+  const groups = {};
+  records.forEach(r => {
+    if (!r.chapter) return;
+    const key = r.subject + "|||" + r.topic + "|||" + r.chapter;
+    if (!groups[key]) groups[key] = { subject: r.subject, topic: r.topic, chapter: r.chapter, count: 0, correct: 0, wrong: 0 };
+    const g = groups[key];
+    g.count++;
+    if (r.correctWrong === "Correct") g.correct++;
+    if (r.correctWrong === "Wrong") g.wrong++;
+  });
+  const totalCount = records.length || 1;
+  return Object.values(groups).map(g => ({
+    ...g, weightagePct: (g.count / totalCount) * 100,
+    acc: (g.correct + g.wrong) ? g.correct / (g.correct + g.wrong) : 0,
+    cls: classify((g.correct + g.wrong) ? g.correct / (g.correct + g.wrong) : 0, g.correct + g.wrong)
+  }));
+}
+
+let weightagePanels = [{ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" }];
+let weightageCompareMode = false;
+
+function pageWeightage() {
+  const wrap = el(`<div></div>`);
+  const back = el(`<button class="backlink">&larr; Back to dashboard</button>`);
+  back.onclick = () => go("dashboard");
+  wrap.appendChild(back);
+  wrap.appendChild(el(`<h1>Weightage by PYQ</h1><p class="lead">Built entirely from the Topic/Chapter/Right-Wrong you logged on PYQ entries.</p>`));
+
+  const allRecords = flatPyqQuestions();
+  if (!allRecords.length) {
+    wrap.appendChild(el(`<div class="empty">No PYQ tests logged yet. Log a PYQ test on the Entry page (Topic + Chapter filled in) to see weightage here.</div>`));
+    return wrap;
+  }
+
+  const topBtnRow = el(`<div class="btnrow" style="margin-bottom:6px;"></div>`);
+  const compareBtn = el(`<button class="${weightageCompareMode ? "" : "secondary"}">${weightageCompareMode ? "Exit Compare" : "COMPARE"}</button>`);
+  compareBtn.onclick = () => {
+    if (weightageCompareMode) {
+      weightageCompareMode = false;
+      weightagePanels = [weightagePanels[0]];
+    } else {
+      weightageCompareMode = true;
+      if (weightagePanels.length < 2) weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" });
+    }
+    go("weightage");
+  };
+  topBtnRow.appendChild(compareBtn);
+  if (weightageCompareMode && weightagePanels.length < 4) {
+    const addBtn = el(`<button class="secondary">+ Add panel</button>`);
+    addBtn.onclick = () => { weightagePanels.push({ filters: emptyWeightageFilters(), evaluateOn: false, sortMode: "weightage" }); go("weightage"); };
+    topBtnRow.appendChild(addBtn);
+  }
+  wrap.appendChild(topBtnRow);
+
+  if (!weightageCompareMode) {
+    const host = el(`<div></div>`);
+    wrap.appendChild(host);
+    renderWeightagePanel(host, weightagePanels[0], allRecords, false, null);
+  } else {
+    const cols = weightagePanels.length;
+    const grid = el(`<div class="comparegrid cols-${cols}"></div>`);
+    weightagePanels.forEach((panel, idx) => {
+      const panelEl = el(`<div class="comparepanel"></div>`);
+      const head = el(`<div class="panelhead"><h3>Panel ${idx + 1}</h3></div>`);
+      if (weightagePanels.length > 2) {
+        const rmBtn = el(`<button class="iconbtn danger" style="padding:3px 8px;">Remove</button>`);
+        rmBtn.onclick = () => { weightagePanels.splice(idx, 1); go("weightage"); };
+        head.appendChild(rmBtn);
+      }
+      panelEl.appendChild(head);
+      renderWeightagePanel(panelEl, panel, allRecords, true, idx);
+      grid.appendChild(panelEl);
+    });
+    wrap.appendChild(grid);
+  }
+
+  return wrap;
+}
+
+function renderWeightagePanel(host, panelState, allRecords, compact, panelIdx) {
+  const filterWrap = el(`<div class="${compact ? "" : "card"}"></div>`);
+  WEIGHT_KEYS.forEach(key => {
+    const options = weightageOptionsFor(allRecords, panelState.filters, key);
+    const group = el(`<div class="filtergroup">
+      <div class="fg-label"><label>${WEIGHT_LABELS[key]}</label>${panelState.filters[key].size ? `<button class="clearlink">Clear</button>` : ""}</div>
+      <div class="chip-toggle" id="wf_${key}"></div>
+    </div>`);
+    const chipRow = group.querySelector(`#wf_${key}`);
+    if (!options.length) {
+      chipRow.appendChild(el(`<span style="color:var(--muted);font-size:.8rem;">No data</span>`));
+    }
+    options.forEach(opt => {
+      const active = panelState.filters[key].has(opt);
+      const chip = el(`<div class="chip ${compact ? "small" : ""} ${active ? "active" : ""}">${esc(opt)}</div>`);
+      chip.onclick = () => {
+        if (panelState.filters[key].has(opt)) panelState.filters[key].delete(opt);
+        else panelState.filters[key].add(opt);
+        go(weightageCompareMode ? "weightage" : "weightage");
+      };
+      chipRow.appendChild(chip);
+    });
+    const clearBtn = group.querySelector(".clearlink");
+    if (clearBtn) clearBtn.onclick = () => { panelState.filters[key].clear(); go("weightage"); };
+    filterWrap.appendChild(group);
+  });
+  host.appendChild(filterWrap);
+
+  const records = weightageFilteredRecords(allRecords, panelState.filters);
+  const actionRow = el(`<div class="btnrow" style="margin:10px 0;"></div>`);
+  const evalBtn = el(`<button class="${panelState.evaluateOn ? "" : "secondary"}">${panelState.evaluateOn ? "Evaluating: ON" : "Evaluate"}</button>`);
+  evalBtn.onclick = () => { panelState.evaluateOn = !panelState.evaluateOn; go("weightage"); };
+  actionRow.appendChild(evalBtn);
+  if (panelState.evaluateOn) {
+    const sortSel = el(`<select style="max-width:220px;">
+      <option value="weightage" ${panelState.sortMode === "weightage" ? "selected" : ""}>Sort: Most Asked First</option>
+      <option value="weak" ${panelState.sortMode === "weak" ? "selected" : ""}>Sort: Weak to Strong</option>
+      <option value="strong" ${panelState.sortMode === "strong" ? "selected" : ""}>Sort: Strong to Weak</option>
+    </select>`);
+    sortSel.addEventListener("change", () => { panelState.sortMode = sortSel.value; go("weightage"); });
+    actionRow.appendChild(sortSel);
+  }
+  host.appendChild(actionRow);
+
+  let rows = computeWeightageRows(records);
+  if (panelState.evaluateOn) {
+    if (panelState.sortMode === "weak") rows.sort((a, b) => a.acc - b.acc);
+    else if (panelState.sortMode === "strong") rows.sort((a, b) => b.acc - a.acc);
+    else rows.sort((a, b) => b.count - a.count);
+  } else {
+    rows.sort((a, b) => b.count - a.count);
+  }
+
+  if (!rows.length) {
+    host.appendChild(el(`<div class="empty">No chapters match this filter.</div>`));
+    return;
+  }
+
+  const resultsCard = el(`<div class="${compact ? "" : "card"}"></div>`);
+  rows.forEach(r => {
+    const row = el(`<div class="weightrow"></div>`);
+    const top = el(`<div class="wtop"><span class="name">${esc(r.chapter)}</span><span class="sub">${esc(r.subject)} &middot; ${esc(r.topic)}</span></div>`);
+    row.appendChild(top);
+    const bar = el(`<div class="progressbar-outer"><div class="progressbar-inner" style="width:${Math.max(2, r.weightagePct)}%;background:var(--accent);"></div></div>`);
+    row.appendChild(bar);
+    const meta = el(`<div class="wmeta"><span>${r.count} question${r.count > 1 ? "s" : ""} &middot; ${r.weightagePct.toFixed(1)}% weightage</span></div>`);
+    if (panelState.evaluateOn) {
+      meta.appendChild(el(`<span class="pill-badge ${r.cls}">${badgeLabel(r.cls)} &middot; ${pct(r.acc)}</span>`));
+    }
+    row.appendChild(meta);
+    resultsCard.appendChild(row);
+  });
+  host.appendChild(resultsCard);
 }
 
 
